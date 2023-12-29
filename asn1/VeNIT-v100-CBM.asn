@@ -1,0 +1,106 @@
+CBM-PDU-Descriptions {
+    venit (0) its (0) cbm(1) major(1) minor(0) patch(0)
+}
+
+DEFINITIONS AUTOMATIC TAGS ::=
+
+BEGIN
+
+IMPORTS
+    StationID,
+    ItsPduHeader,
+    ReferencePosition,
+    Speed,
+    StationType,
+    Latitude,
+    Longitude
+FROM ITS-Container {itu-t (0) identified-organization (4) etsi (0) itsDomain (5) wg1 (1) ts (102894) cdd (2) version (2)}
+
+    GenerationDeltaTime
+FROM CAM-PDU-Descriptions {itu-t (0) identified-organization (4) etsi (0) itsDomain (5) wg1 (1) en (302637) cam (2) version (2)};
+
+--  The root data frame for collective behaviour messages
+
+CBM ::= SEQUENCE {
+    header ItsPduHeader,
+    cbm CollectiveBehaviour
+}
+
+CollectiveBehaviour ::= SEQUENCE {
+    generationDeltaTime GenerationDeltaTime,
+    cbmParameters CbmParameters
+}
+
+CbmParameters ::= SEQUENCE {
+    baseContainer BaseContainer,
+    platoonContainer PlatoonContainer OPTIONAL,
+    ...
+}
+
+Type ::= ENUMERATED {reform(0), status (2), update (3)}
+ReformType ::= ENUMERATED {split(0), merge (1)}
+
+MergeContainer ::= SEQUENCE {
+    fix PlatoonID,
+    join PlatoonID,
+    ...
+}
+
+SplitContainer ::= SEQUENCE {
+    platoon PlatoonID,
+    s1 SimpleBaseContainer,
+    itinerary1 ItineraryPath OPTIONAL,
+    s2 SimpleBaseContainer,
+    itinerary2 ItineraryPath OPTIONAL,
+    ...
+}
+
+StatusContainer ::= SEQUENCE {
+    platoonId PlatoonID,
+    speed Speed OPTIONAL,
+    gap Gap OPTIONAL,
+    itineraryPath ItineraryPath OPTIONAL,
+    ...
+}
+
+UpdateContainer ::= SEQUENCE {
+    platoonId PlatoonID,
+    speed Speed OPTIONAL,
+    gap Gap OPTIONAL,
+    itineraryPath ItineraryPath OPTIONAL,
+    ...
+}
+
+BaseContainer ::= SEQUENCE {
+    lead Vehicle,
+    members MemberVehicles OPTIONAL,
+    ...
+}
+
+SimpleBaseContainer ::= SEQUENCE {
+    lead StationID,
+    members MemberStationIDs OPTIONAL,
+    ...
+}
+
+PlatoonContainer ::= CHOICE {
+    splitContainer SplitContainer,
+    mergeContainer MergeContainer,
+    statusContainer StatusContainer,
+    updateContainer UpdateContainer,
+    ...
+}
+
+Vehicle ::= SEQUENCE {
+    stationID StationID,
+    referencePosition ReferencePosition OPTIONAL
+}
+
+MemberVehicles ::= SEQUENCE SIZE(1..100) OF Vehicle
+MemberStationIDs ::= SEQUENCE SIZE(1..100) OF StationID
+
+Gap ::= INTEGER { oneCentimeter(1) } (0..10000)
+
+PlatoonID ::= INTEGER(0..4294967295)
+
+END

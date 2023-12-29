@@ -44,6 +44,7 @@ its/AvcPart.c
 its/AviEriDateTime.c
 its/AxleWeightLimits.c
 its/BankingAngle.c
+its/BaseContainer.c
 its/BasicContainer.c
 its/BasicVehicleContainerHighFrequency.c
 its/BasicVehicleContainerLowFrequency.c
@@ -51,6 +52,7 @@ its/BasicVehicleRole.c
 its/BatteryStatus.c
 its/CAM.c
 its/CO2EmissionValue.c
+its/CBM.c
 its/CPM.c
 its/CS1.c
 its/CS2.c
@@ -64,6 +66,7 @@ its/CartesianAngle.c
 its/CartesianAngleValue.c
 its/CauseCode.c
 its/CauseCodeType.c
+its/CbmParameters.c
 its/CenDsrcTollingZone.c
 its/CenDsrcTollingZoneID.c
 its/ChannelId.c
@@ -72,6 +75,7 @@ its/ChannelRs.c
 its/ClassConfidence.c
 its/ClosedLanes.c
 its/Code-Units.c
+its/CollectiveBehaviour.c
 its/CollectivePerceptionMessage.c
 its/CollisionRiskSubCauseCode.c
 its/ComparisonOperator.c
@@ -206,6 +210,7 @@ its/GapBetweenVehicles.c
 its/GddAttribute.c
 its/GddAttributes.c
 its/GddStructure.c
+its/Gap.c
 its/GeneralIviContainer.c
 its/GenerationDeltaTime.c
 its/GenericLane.c
@@ -348,6 +353,9 @@ its/MatchedPosition.c
 its/MaterialType.c
 its/MaxLenghtOfPlatoon.c
 its/MaxNoOfVehicles.c
+its/MemberStationIDs.c
+its/MemberVehicles.c
+its/MergeContainer.c
 its/MergeDivergeNodeAngle.c
 its/MinuteOfTheYear.c
 its/MlcPart.c
@@ -424,6 +432,8 @@ its/PersonalAccountNumber.c
 its/PhoneNumber.c
 its/PlatooningRule.c
 its/PlatooningRules.c
+its/PlatoonContainer.c
+its/PlatoonID.c
 its/PolyPointList.c
 its/PolygonalLine.c
 its/PosCentMass.c
@@ -486,6 +496,7 @@ its/ReceiptText.c
 its/RefPointId.c
 its/ReferenceDenms.c
 its/ReferencePosition.c
+its/ReformType.c
 its/RegionId.c
 its/RegionalExtension.c
 its/RegulatorySpeedLimit.c
@@ -578,6 +589,7 @@ its/SignalStatusPackage.c
 its/SignalStatusPackageList.c
 its/SignalViolationSubCauseCode.c
 its/SignedValue.c
+its/SimpleBaseContainer.c
 its/SituationContainer.c
 its/SlowVehicleSubCauseCode.c
 its/SoundLevel.c
@@ -596,6 +608,7 @@ its/SpeedValue.c
 its/SpeedValueExtended.c
 its/SpeedandHeadingIsoandThrottleConfidence.c
 its/StartTime.c
+its/SplitContainer.c
 its/StationDataContainer.c
 its/StationID.c
 its/StationType.c
@@ -603,6 +616,7 @@ its/StationTypeIso.c
 its/StationarySince.c
 its/StationaryVehicleContainer.c
 its/StationaryVehicleSubCauseCode.c
+its/StatusContainer.c
 its/SteeringWheelAngle.c
 its/SteeringWheelAngleConfidence.c
 its/SteeringWheelAngleValue.c
@@ -645,7 +659,9 @@ its/TransmissionInterval.c
 its/TransmissionState.c
 its/TreatmentType.c
 its/TurningRadius.c
+its/Type.c
 its/UnitType.c
+its/UpdateContainer.c
 its/VDS.c
 its/ValidityDuration.c
 its/ValidityOfContract.c
@@ -657,6 +673,7 @@ its/VcCode.c
 its/VcOption.c
 its/VehicleAuthenticator.c
 its/VehicleAxles.c
+its/Vehicle.c
 its/VehicleBreakdownSubCauseCode.c
 its/VehicleCharacteristicsFixValues.c
 its/VehicleCharacteristicsFixValuesList.c

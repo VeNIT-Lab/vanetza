@@ -33,6 +33,7 @@ constexpr ItsAid IMZ = 640;
 constexpr ItsAid SA = 540801;
 constexpr ItsAid GPC = 540802;
 constexpr ItsAid IPV6_ROUTING = 270549118;
+constexpr ItsAid CB = 600000;
 
 } // namespace aid
 } // namespace vanetza

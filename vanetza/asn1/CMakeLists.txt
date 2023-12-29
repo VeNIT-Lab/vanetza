@@ -19,6 +19,7 @@ if(VANETZA_ASN1_WITH_ASN1C)
         ${PROJECT_SOURCE_DIR}/asn1/TS102894-2v131-CDD.asn
         ${PROJECT_SOURCE_DIR}/asn1/EN302637-2v141-CAM.asn
         ${PROJECT_SOURCE_DIR}/asn1/EN302637-3v131-DENM.asn
+        ${PROJECT_SOURCE_DIR}/asn1/VeNIT-v100-CBM.asn
     )
 
     set(_its_asn1_files_depending_on_iso
