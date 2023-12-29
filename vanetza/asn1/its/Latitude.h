@@ -5,8 +5,8 @@
  * 	`asn1c -fcompound-names -fincludes-quoted -no-gen-example -R`
  */
 
-#ifndef	_Latitude_H_
-#define	_Latitude_H_
+#ifndef	_Latitude_H_casdasf
+#define	_Latitude_H_casdasf
 
 
 #include "asn_application.h"
@@ -50,5 +50,5 @@ per_type_encoder_f Latitude_encode_aper;
 }
 #endif
 
-#endif	/* _Latitude_H_ */
+#endif	/* _Latitude_H_casdasf */
 #include "asn_internal.h"

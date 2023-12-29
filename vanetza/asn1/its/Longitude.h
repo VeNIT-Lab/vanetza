@@ -5,8 +5,8 @@
  * 	`asn1c -fcompound-names -fincludes-quoted -no-gen-example -R`
  */
 
-#ifndef	_Longitude_H_
-#define	_Longitude_H_
+#ifndef	_Longitude_H_45hgnd
+#define	_Longitude_H_45hgnd
 
 
 #include "asn_application.h"
@@ -50,5 +50,5 @@ per_type_encoder_f Longitude_encode_aper;
 }
 #endif
 
-#endif	/* _Longitude_H_ */
+#endif	/* _Longitude_H_45hgnd */
 #include "asn_internal.h"
