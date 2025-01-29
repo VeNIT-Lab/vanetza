@@ -28,8 +28,8 @@ TEST(ItsAsn1, max_timestamp_roundtrip)
 TEST(ItsAsn1, encode_denm)
 {
     asn1::Denm denm;
-    EXPECT_EQ(0, asn_uint642INTEGER(&denm->denm.management.detectionTime, TimestampIts_utcStartOf2004));
-    EXPECT_EQ(0, asn_uint642INTEGER(&denm->denm.management.referenceTime, TimestampIts_utcStartOf2004));
+    EXPECT_EQ(0, asn_uint642INTEGER(&denm->denm.management.detectionTime, 4398046511103));
+    EXPECT_EQ(0, asn_uint642INTEGER(&denm->denm.management.referenceTime, 4398046511103));
     EXPECT_TRUE(denm.validate());
     vanetza::ByteBuffer buf = denm.encode();
     EXPECT_EQ(40, buf.size());
