@@ -6,6 +6,7 @@
 #include <boost/multi_index/hashed_index.hpp>
 #include <boost/multi_index/member.hpp>
 #include <boost/multi_index/ordered_index.hpp>
+#include <mutex>
 
 namespace vanetza
 {
@@ -54,7 +55,7 @@ public:
      * \note time point might belong to an expired event, i.e. next() < now()
      * \return time point of next event or time_point::max if none
      */
-    Clock::time_point next() const;
+    Clock::time_point next();
 
     // Runtime interface (see header there for details)
     void schedule(Clock::time_point, const Callback&, const void* = nullptr) override;
@@ -94,6 +95,7 @@ private:
 
     Clock::time_point m_now;
     queue_type m_queue;
+    mutable std::mutex m_mutex;
 };
 
 } // namespace vanetza
