@@ -10,6 +10,7 @@ ManualRuntime::ManualRuntime(Clock::time_point init) : m_now(init)
 
 void ManualRuntime::schedule(Clock::time_point tp, const Callback& cb, const void* scope)
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
     m_queue.emplace(queue_type::value_type { tp, cb, scope });
 }
 
@@ -21,52 +22,75 @@ void ManualRuntime::schedule(Clock::duration d, const Callback& cb, const void* 
 void ManualRuntime::cancel(const void* scope)
 {
     if (scope) {
+    	std::lock_guard<std::mutex> lock(m_mutex);
         auto scope_match_range = m_queue.get<by_scope>().equal_range(scope);
         m_queue.get<by_scope>().erase(scope_match_range.first, scope_match_range.second);
     }
 }
 
-Clock::time_point ManualRuntime::next() const
+Clock::time_point ManualRuntime::next()
 {
     Clock::time_point next_tp = Clock::time_point::max();
-    if (!m_queue.empty()) {
-        next_tp = m_queue.get<by_deadline>().begin()->deadline;
-    }
+	{
+    	std::lock_guard<std::mutex> lock(m_mutex);
+    	if (!m_queue.empty()) {
+			next_tp = m_queue.get<by_deadline>().begin()->deadline;
+		}
+	}
     return next_tp;
 }
 
 Clock::time_point ManualRuntime::now() const
 {
+	std::lock_guard<std::mutex> lock(m_mutex);
     return m_now;
 }
 
 void ManualRuntime::trigger(Clock::time_point tp)
 {
-    // require monotonic clock
-    assert(tp >= m_now);
-    m_now = tp;
+	{
+    	std::lock_guard<std::mutex> lock(m_mutex);
+		if (tp >= m_now) { // This is needed for thread-safe usage in high load
+			m_now = tp;
+		}
+	}
     trigger();
 }
 
 void ManualRuntime::trigger(Clock::duration d)
 {
-    m_now += d;
+  {
+   		std::lock_guard<std::mutex> lock(m_mutex);
+   		m_now += d;
+   }
     trigger();
 }
 
 void ManualRuntime::trigger()
 {
-    // process queue elements separately because callback might modify runtime
-    while (!m_queue.empty()) {
-        auto top = m_queue.get<by_deadline>().begin();
-        const auto deadline = top->deadline; // copy of deadline on purpose (erase before callback)
-        if (deadline <= m_now) {
-            Callback cb = top->callback;
-            m_queue.get<by_deadline>().erase(top);
-            // callback invocation has to be last action because it might modify runtime
+    while (true) {
+        Callback cb;
+        Clock::time_point deadline;
+
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_queue.empty()) {
+                break;
+            }
+
+            auto top = m_queue.get<by_deadline>().begin();
+            deadline = top->deadline;
+
+            if (deadline <= m_now) {
+                cb = top->callback;
+                m_queue.get<by_deadline>().erase(top);
+            } else {
+                break;
+            }
+        }
+
+        if (cb) {
             cb(deadline);
-        } else {
-            break;
         }
     }
 }
