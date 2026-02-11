@@ -171,6 +171,7 @@ Router::~Router()
 
 void Router::update_position(const PositionFix& position_fix)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     // EN 302 636-4-1 v1.3.1 is a little bit fuzzy regarding the time stamp:
     // "Expresses the time (...) at which the latitude and longitude (...) were acquired by the GeoAdhoc router."
     // My reading: use the current time stamp (now) when update_position is called (not the position fix time stamp)
@@ -191,38 +192,45 @@ void Router::update_position(const PositionFix& position_fix)
 
 void Router::set_transport_handler(UpperProtocol proto, TransportInterface* ifc)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_transport_ifcs[proto] = ifc;
 }
 
 void Router::set_security_entity(security::SecurityEntity* entity)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_security_entity = entity;
 }
 
 void Router::set_access_interface(dcc::RequestInterface* ifc)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_request_interface = (ifc == nullptr ? get_default_request_interface() : ifc);
     assert(m_request_interface != nullptr);
 }
 
 void Router::set_dcc_field_generator(DccFieldGenerator* dcc)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_dcc_field_generator = (dcc == nullptr) ? get_default_dcc_field_generator() : dcc;
     assert(m_dcc_field_generator != nullptr);
 }
 
 void Router::set_address(const Address& addr)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_local_position_vector.gn_addr = addr;
 }
 
 void Router::set_random_seed(std::uint_fast32_t seed)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     m_random_gen.seed(seed);
 }
 
 DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
     result ^= validate_payload(payload, m_mib);
@@ -285,6 +293,7 @@ DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload
 
 DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
     result ^= validate_payload(payload, m_mib);
@@ -360,21 +369,25 @@ DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload
 
 DataConfirm Router::request(const GacDataRequest&, DownPacketPtr)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
 DataConfirm Router::request(const GucDataRequest&, DownPacketPtr)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
 DataConfirm Router::request(const TsbDataRequest&, DownPacketPtr)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
 void Router::indicate(UpPacketPtr packet, const MacAddress& sender, const MacAddress& destination)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     assert(packet);
     IndicationContext::LinkLayer link_layer;
     link_layer.sender = sender;
@@ -704,6 +717,7 @@ void Router::pass_up(const DataIndication& ind, UpPacketPtr packet)
 
 void Router::on_beacon_timer_expired()
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_mib.vanetzaDisableBeaconing) {
         // bail out immediately if beaconing has been disabled
         return;
@@ -756,6 +770,7 @@ void Router::reset_beacon_timer(Clock::duration next_beacon)
 
 void Router::dispatch_repetition(const DataRequestVariant& request, std::unique_ptr<DownPacket> payload)
 {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     RepetitionDispatcher dispatcher(*this, std::move(payload));
     boost::apply_visitor(dispatcher, request);
 }
