@@ -31,6 +31,7 @@
 #include <memory>
 #include <random>
 #include <map>
+#include <mutex>
 
 namespace vanetza
 {
@@ -560,6 +561,7 @@ private:
     Repeater m_repeater;
     std::mt19937 m_random_gen;
     GbcMemory m_gbc_memory;
+    mutable std::recursive_mutex m_mutex;
 };
 
 /**
