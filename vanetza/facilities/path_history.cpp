@@ -100,5 +100,56 @@ void PathHistory::truncateConcisePoints()
     }
 }
 
+boost::iterator_range<std::list<PathPoint>::const_iterator>
+PathHistory::getConcisePointsMinLength(units::Length distance) const
+{
+    return getConcisePointsMinLength(distance, m_concise.size());
+}
+
+boost::iterator_range<std::list<PathPoint>::const_iterator>
+PathHistory::getConcisePointsMinLength(units::Length distance, std::size_t max_points) const
+{
+    units::Length covered = 0.0 * units::si::meter;
+    std::size_t count = 0;
+    const PathPoint* previous = nullptr;
+    auto cut = m_concise.begin();
+    for (; cut != m_concise.end() && count < max_points; ++cut, ++count) {
+        if (previous != nullptr) {
+            covered += chord_length(*previous, *cut);
+        }
+        previous = &*cut;
+        if (covered >= distance) {
+            ++cut; // include the point reaching the distance
+            break;
+        }
+    }
+    return { m_concise.begin(), cut };
+}
+
+boost::iterator_range<std::list<PathPoint>::const_iterator>
+PathHistory::getConcisePointsMaxLength(units::Length distance) const
+{
+    return getConcisePointsMaxLength(distance, m_concise.size());
+}
+
+boost::iterator_range<std::list<PathPoint>::const_iterator>
+PathHistory::getConcisePointsMaxLength(units::Length distance, std::size_t max_points) const
+{
+    units::Length covered = 0.0 * units::si::meter;
+    std::size_t count = 0;
+    const PathPoint* previous = nullptr;
+    auto cut = m_concise.begin();
+    for (; cut != m_concise.end() && count < max_points; ++cut, ++count) {
+        if (previous != nullptr) {
+            covered += chord_length(*previous, *cut);
+            if (covered > distance) {
+                break; // exclude the point beyond the distance
+            }
+        }
+        previous = &*cut;
+    }
+    return { m_concise.begin(), cut };
+}
+
 } // namespace facilities
 } // namespace vanetza

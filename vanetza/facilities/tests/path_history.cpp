@@ -149,3 +149,31 @@ TEST(PathHistory, concise_points_truncation) {
     EXPECT_DOUBLE_EQ(280.0 * cOneMeterLatitude.value(),
             ph.getConcisePoints().front().latitude.value());
 }
+
+TEST(PathHistory, concise_points_retrieval_limits) {
+    PathHistory ph;
+    PathPoint pp;
+    pp.latitude = 0.0 * units::degrees;
+    pp.longitude = 0.0 * units::degrees;
+    ph.addSample(pp);
+    for (unsigned i = 0; i < 6; ++i) {
+        pp.latitude += 25.0 * cOneMeterLatitude; // beyond chord threshold: a concise point each
+        ph.addSample(pp);
+    }
+    const std::list<PathPoint>& full = ph.getConcisePoints();
+    ASSERT_GT(full.size(), 3u);
+
+    // concise points ~25 m apart, so at a 30 m threshold:
+    // "covering" includes the point crossing 30 m, "within" excludes it
+    const auto covering = ph.getConcisePointsMinLength(30.0 * units::si::meter);
+    const auto within = ph.getConcisePointsMaxLength(30.0 * units::si::meter);
+    EXPECT_EQ(3, std::distance(covering.begin(), covering.end()));
+    EXPECT_EQ(2, std::distance(within.begin(), within.end()));
+    EXPECT_DOUBLE_EQ(full.front().latitude.value(), covering.front().latitude.value());
+    EXPECT_DOUBLE_EQ(full.front().latitude.value(), within.front().latitude.value());
+
+    // optional point limit keeps the newest points
+    const auto capped = ph.getConcisePointsMinLength(10000.0 * units::si::meter, 2);
+    EXPECT_EQ(2, std::distance(capped.begin(), capped.end()));
+    EXPECT_DOUBLE_EQ(full.front().latitude.value(), capped.front().latitude.value());
+}
