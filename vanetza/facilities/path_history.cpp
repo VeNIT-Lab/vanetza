@@ -49,6 +49,12 @@ void PathHistory::addSample(const PathPoint& point)
     truncateConcisePoints();
 }
 
+void PathHistory::clear()
+{
+    m_samples.clear();
+    m_concise.clear();
+}
+
 const PathPoint& PathHistory::getReferencePoint() const
 {
     static const PathPoint scDefaultPathPoint = PathPoint();

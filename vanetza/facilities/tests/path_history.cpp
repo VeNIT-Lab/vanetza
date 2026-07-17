@@ -152,6 +152,26 @@ TEST(PathHistory, concise_points_truncation) {
             ph.getConcisePoints().front().latitude.value());
 }
 
+TEST(PathHistory, clear_resets) {
+    PathHistory ph;
+    PathPoint pp;
+    pp.latitude = 0.0 * units::degrees;
+    pp.longitude = 0.0 * units::degrees;
+    for (unsigned i = 0; i < 5; ++i) {
+        pp.latitude += 25.0 * cOneMeterLatitude;
+        ph.addSample(pp);
+    }
+    ASSERT_GT(ph.getConcisePoints().size(), 1u);
+
+    ph.clear();
+    EXPECT_EQ(0u, ph.getConcisePoints().size());
+    EXPECT_PATHPOINT_EQ(PathPoint(), ph.getReferencePoint());
+
+    // usable again, no stale points carried across the reset
+    ph.addSample(pp);
+    EXPECT_EQ(1u, ph.getConcisePoints().size());
+}
+
 TEST(PathHistory, custom_retention_keeps_more) {
     PathHistory::Parameters short_params;
     short_params.retention_distance = 200.0 * units::si::meter;

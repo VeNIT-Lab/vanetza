@@ -42,6 +42,11 @@ public:
     void addSample(const PathPoint&);
 
     /**
+     * Drop all samples and concise points, e.g. on pseudonym (AT) change
+     */
+    void clear();
+
+    /**
      * Get current reference point, i.e. last provided path point
      * \return current reference point (fallback is a default constructed PathPoint)
      */
