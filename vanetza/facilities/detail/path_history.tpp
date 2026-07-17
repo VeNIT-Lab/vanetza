@@ -22,18 +22,28 @@ void copy(const facilities::PathHistory& src, SomePathSequence& dest,
     static const auto scDeltaTimeStepLength = boost::posix_time::milliseconds(10);
     static const auto scMaxDeltaTime = scDeltaTimeStepLength * 65535;
 
-    const facilities::PathPoint& ref = src.getReferencePoint();
+    // ETSI TS 102 894-2: first PathPoint relative to the reference position, each subsequent
+    // one relative to the previous PathPoint (incremental deltas); newest first (RS_BSP_287).
+    facilities::PathPoint prev = src.getReferencePoint();
+    bool first_point = true; // only the first PathPoint may be clamped (stationary marker)
 
     for (const PathPoint& point : src.getConcisePointsMinLength(min_distance, max_points)) {
-        auto delta_time = ref.time - point.time; // positive: point is in past
-        auto delta_latitude = round(point.latitude - ref.latitude, tenth_microdegree); // positive: point is north
-        auto delta_longitude = round(point.longitude - ref.longitude, tenth_microdegree); // positive: point is east
+        auto delta_time = prev.time - point.time; // positive: point is in past
+        auto delta_latitude = round(point.latitude - prev.latitude, tenth_microdegree);
+        auto delta_longitude = round(point.longitude - prev.longitude, tenth_microdegree);
 
         if (delta_latitude < -131071 || delta_latitude > 131071) {
             continue; // delta latitude not encodable
         } else if (delta_longitude < -131071 || delta_longitude > 131071) {
             continue; // delta longitude not encodable
-        } else if (delta_time >= scDeltaTimeStepLength && delta_time <= scMaxDeltaTime) {
+        } else if (delta_time >= scDeltaTimeStepLength) {
+            if (delta_time > scMaxDeltaTime) {
+                if (first_point) {
+                    delta_time = scMaxDeltaTime; // RS_BSP_289: clamp the first PathPoint (stationary marker)
+                } else {
+                    break; // later overflow (old stationary) drops the disconnected older trail
+                }
+            }
             SomePathPoint* path_point = asn1::allocate<SomePathPoint>();
             path_point->pathPosition.deltaLatitude = delta_latitude;
             path_point->pathPosition.deltaLongitude = delta_longitude;
@@ -43,6 +53,8 @@ void copy(const facilities::PathHistory& src, SomePathSequence& dest,
             *(path_point->pathDeltaTime) = delta_time.total_milliseconds() / scDeltaTimeStepLength.total_milliseconds();
 
             ASN_SEQUENCE_ADD(&dest, path_point);
+            prev = point;
+            first_point = false;
         }
     }
 }

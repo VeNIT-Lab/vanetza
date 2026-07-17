@@ -264,9 +264,14 @@ TYPED_TEST(CamFunctionsPathHistory, copy_path_history)
 
     SomePathHistory dest_path_history = {}; // zero-initialize struct
     copy(this->path_history, dest_path_history);
-    
+
     int size = dest_path_history.list.count;
     EXPECT_EQ(size, 2);
+    // incremental encoding: each point relative to the previous
+    EXPECT_EQ(dest_path_history.list.array[0]->pathPosition.deltaLatitude,
+              dest_path_history.list.array[1]->pathPosition.deltaLatitude);
+    EXPECT_EQ(*dest_path_history.list.array[0]->pathDeltaTime, 1000); // 10 s
+    EXPECT_EQ(*dest_path_history.list.array[1]->pathDeltaTime, 1000); // 10 s
     for (int i = 0; i < size; i++) {
         auto current_path_point = dest_path_history.list.array[i];
         ASSERT_NE(current_path_point->pathDeltaTime, nullptr);
@@ -283,4 +288,53 @@ TYPED_TEST(CamFunctionsPathHistory, copy_path_history)
     }
 
     asn1::reset(dest_path_history);
+}
+
+TYPED_TEST(CamFunctionsPathHistory, copy_clamps_stationary_delta_time)
+{
+    using SomePathHistory = TypeParam;
+
+    this->add_sample(40.906, 29.155, "20241027T031000");
+    this->add_sample(40.907, 29.156, "20241027T031010");
+    this->add_sample(40.908, 29.157, "20241027T031020");
+    // parked ~20 min at the last position: reference far past the max PathDeltaTime
+    this->add_sample(40.908, 29.157, "20241027T033000");
+
+    SomePathHistory dest = {}; // zero-initialize struct
+    copy(this->path_history, dest);
+
+    ASSERT_EQ(dest.list.count, 3); // whole trace kept alive
+    ASSERT_NE(dest.list.array[0]->pathDeltaTime, nullptr);
+    EXPECT_EQ(*dest.list.array[0]->pathDeltaTime, 65535); // only the first point is clamped
+    for (int i = 1; i < dest.list.count; i++) {
+        ASSERT_NE(dest.list.array[i]->pathDeltaTime, nullptr);
+        EXPECT_LT(*dest.list.array[i]->pathDeltaTime, 65535); // later points keep their short gaps
+    }
+
+    asn1::reset(dest);
+}
+
+TYPED_TEST(CamFunctionsPathHistory, copy_truncates_after_long_stop)
+{
+    using SomePathHistory = TypeParam;
+
+    // moved, parked ~21 min, then resumed: the stop is a >655 s gap in the middle
+    this->add_sample(40.9000, 29.1500, "20241027T031000"); // pre-stop trail
+    this->add_sample(40.9005, 29.1505, "20241027T031010");
+    this->add_sample(40.9010, 29.1510, "20241027T031020");
+    this->add_sample(40.9015, 29.1515, "20241027T033100"); // resumed ~21 min later
+    this->add_sample(40.9020, 29.1520, "20241027T033110");
+    this->add_sample(40.9025, 29.1525, "20241027T033120");
+
+    SomePathHistory dest = {}; // zero-initialize struct
+    copy(this->path_history, dest);
+
+    // trail is cut at the discontinuity, not carried across it with a clamped mid gap
+    ASSERT_GT(dest.list.count, 0);
+    for (int i = 0; i < dest.list.count; i++) {
+        ASSERT_NE(dest.list.array[i]->pathDeltaTime, nullptr);
+        EXPECT_LT(*dest.list.array[i]->pathDeltaTime, 65535);
+    }
+
+    asn1::reset(dest);
 }
