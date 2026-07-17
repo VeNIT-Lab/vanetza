@@ -12,6 +12,11 @@ namespace vanetza
 namespace facilities
 {
 
+// C2C-CC BSP RS_BSP_318 path history (Method One) parameters
+extern const units::Length cTraceAllowableError;
+extern const units::Length cTraceMaxDeltaDistance;
+extern const units::Angle cTraceDeltaPhi;
+
 /**
  * Implementation of Path History Reference Design (Method One)
  * \see NHTSA Document "VSC-A Final Report: Appendix B-2" from September 2011
@@ -19,7 +24,16 @@ namespace facilities
 class PathHistory
 {
 public:
+    struct Parameters
+    {
+        units::Length allowable_error = cTraceAllowableError;
+        units::Length chord_length_threshold = cTraceMaxDeltaDistance;
+        units::Angle small_delta_phi = cTraceDeltaPhi;
+        units::Length retention_distance = 500.0 * units::si::meter;
+    };
+
     PathHistory();
+    explicit PathHistory(const Parameters& params);
 
     /**
      * Consider one further path point for inclusion into path history
@@ -72,6 +86,7 @@ private:
     const PathPoint& previous() const;
     const PathPoint& next() const;
 
+    Parameters m_params;
     boost::circular_buffer<PathPoint> m_samples;
     std::list<PathPoint> m_concise;
 };

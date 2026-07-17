@@ -118,7 +118,9 @@ TEST(PathHistory, concise_points_actual_error_threshold) {
 }
 
 TEST(PathHistory, concise_points_truncation) {
-    PathHistory ph;
+    PathHistory::Parameters params;
+    params.retention_distance = 200.0 * units::si::meter;
+    PathHistory ph(params);
     PathPoint pp;
     pp.latitude = 0.0 * units::degree;
     pp.longitude = 0.0 * units::degree;
@@ -148,6 +150,28 @@ TEST(PathHistory, concise_points_truncation) {
             ph.getConcisePoints().back().latitude.value());
     EXPECT_DOUBLE_EQ(280.0 * cOneMeterLatitude.value(),
             ph.getConcisePoints().front().latitude.value());
+}
+
+TEST(PathHistory, custom_retention_keeps_more) {
+    PathHistory::Parameters short_params;
+    short_params.retention_distance = 200.0 * units::si::meter;
+    PathHistory short_hist(short_params);
+
+    PathHistory::Parameters long_params;
+    long_params.retention_distance = 500.0 * units::si::meter;
+    PathHistory long_hist(long_params);
+
+    PathPoint pp;
+    pp.latitude = 0.0 * units::degrees;
+    pp.longitude = 0.0 * units::degrees;
+    short_hist.addSample(pp);
+    long_hist.addSample(pp);
+    for (unsigned i = 0; i < 20; ++i) {
+        pp.latitude += 25.0 * cOneMeterLatitude; // ~25 m steps, ~500 m total
+        short_hist.addSample(pp);
+        long_hist.addSample(pp);
+    }
+    EXPECT_GT(long_hist.getConcisePoints().size(), short_hist.getConcisePoints().size());
 }
 
 TEST(PathHistory, concise_points_retrieval_limits) {

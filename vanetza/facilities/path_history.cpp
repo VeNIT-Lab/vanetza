@@ -7,14 +7,16 @@
 namespace vanetza {
 namespace facilities {
 
-const units::Length cAllowableError = 0.47 * units::si::meter;
-const units::Length cChordLengthThreshold = 22.5 * units::si::meters;
-const units::Length cDistance = 200.0 * units::si::meters;
-const units::Length cMaxEstimatedRadius = cREarthMeridian;
-const units::Angle cSmallDeltaPhi = units::Angle(1.0 * units::degree);
+const units::Length cTraceAllowableError = 0.47 * units::si::meter;
+const units::Length cTraceMaxDeltaDistance = 22.5 * units::si::meter;
+const units::Angle cTraceDeltaPhi = units::Angle(1.0 * units::degree);
 
-PathHistory::PathHistory() :
-    m_samples(3)
+PathHistory::PathHistory() : PathHistory(Parameters{})
+{
+}
+
+PathHistory::PathHistory(const Parameters& params) :
+    m_params(params), m_samples(3)
 {
 }
 
@@ -63,22 +65,20 @@ void PathHistory::updateConcisePoints()
     if (m_samples.full()) {
         const auto actual_chord_length = chord_length(starting(), next());
         units::Length actual_error;
-        if (actual_chord_length > cChordLengthThreshold) {
-            actual_error = cAllowableError + 1.0 * units::si::meter;
+        if (actual_chord_length > m_params.chord_length_threshold) {
+            actual_error = m_params.allowable_error + 1.0 * units::si::meter;
         } else {
             const units::Angle delta_phi = next().heading - starting().heading;
-            units::Length estimated_radius;
-            if (abs(delta_phi) < cSmallDeltaPhi) {
+            if (abs(delta_phi) < m_params.small_delta_phi) {
                 actual_error = 0.0 * units::si::meter;
-                estimated_radius = cMaxEstimatedRadius;
             } else {
-                estimated_radius = actual_chord_length / (2 * sin(delta_phi * 0.5));
+                const units::Length estimated_radius = actual_chord_length / (2 * sin(delta_phi * 0.5));
                 const units::Length d = estimated_radius * cos(0.5 * delta_phi);
                 actual_error = estimated_radius - d;
             }
         }
 
-        if (actual_error > cAllowableError) {
+        if (actual_error > m_params.allowable_error) {
             m_concise.push_front(previous());
         }
     }
@@ -92,7 +92,7 @@ void PathHistory::truncateConcisePoints()
         auto current = ++m_concise.begin();
         for (; current != m_concise.end(); ++previous, ++current) {
             distance += chord_length(*previous, *current);
-            if (distance >= cDistance) {
+            if (distance >= m_params.retention_distance) {
                 m_concise.erase(++current, m_concise.end());
                 break;
             }
