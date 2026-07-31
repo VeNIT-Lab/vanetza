@@ -17,6 +17,8 @@ private:
     int validity_days;
     std::string cam_permissions;
     std::string denm_permissions;
+	bool permit_vam = false;
+	bool permit_cpm = false;
     bool permit_gn_mgmt = false;
 };
 
