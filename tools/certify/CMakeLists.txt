@@ -8,9 +8,12 @@ if(NOT TARGET CryptoPP::CryptoPP)
     return()
 endif()
 
+find_package(yaml-cpp REQUIRED)
+
 add_executable(certify
     commands/extract-public-key.cpp
     commands/generate-aa.cpp
+    commands/generate-batch.cpp
     commands/generate-key.cpp
     commands/generate-root.cpp
     commands/generate-ticket.cpp
@@ -21,4 +24,5 @@ add_executable(certify
 )
 
 target_include_directories(certify PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(certify Boost::program_options vanetza)
+target_compile_features(certify PRIVATE cxx_std_17)
+target_link_libraries(certify Boost::program_options yaml-cpp vanetza)

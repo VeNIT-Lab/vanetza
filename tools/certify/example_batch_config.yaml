@@ -1,0 +1,81 @@
+# Example batch certificate generation configuration
+# This file demonstrates how to generate multiple authorization tickets with different permission profiles
+
+defaults:
+  sign_key: /path/to/aa_private.key
+  sign_cert: /path/to/aa_certificate.cert
+  output_dir: ./generated_tickets
+  validity_days: 30
+
+# Define reusable permission profiles
+profiles:
+  # Profile for standard CAM+DENM vehicles
+  standard_vehicle:
+    cam_permissions: "1111111111111100"
+    denm_permissions: "000000000000000000000000"
+    permit_vam: false
+    permit_cpm: false
+    permit_gn_mgmt: false
+
+  # Profile for VRU (Vulnerable Road User) devices
+  vru_device:
+    cam_permissions: "1111111111111100"
+    denm_permissions: ""
+    permit_vam: true
+    permit_cpm: false
+    permit_gn_mgmt: false
+
+  # Profile for roadside units with CPM support
+  rsu_with_cpm:
+    cam_permissions: "1111111111111100"
+    denm_permissions: "000000000000000000000000"
+    permit_vam: false
+    permit_cpm: true
+    permit_gn_mgmt: true
+
+  # Profile for full permissions
+  full_permissions:
+    cam_permissions: "1111111111111111"
+    denm_permissions: "111111111111111111111111"
+    permit_vam: true
+    permit_cpm: true
+    permit_gn_mgmt: true
+
+# Define stations (each will get a certificate generated)
+stations:
+  - station_id: "001"
+    name: "vehicle_alpha"
+    subject_key: /path/to/keys/vehicle_001.key
+    profile: standard_vehicle
+
+  - station_id: "002"
+    name: "vehicle_beta"
+    subject_key: /path/to/keys/vehicle_002.key
+    profile: standard_vehicle
+
+  - station_id: "003"
+    name: "pedestrian_charlie"
+    subject_key: /path/to/keys/pedestrian_003.key
+    profile: vru_device
+
+  - station_id: "004"
+    name: "rsu_delta"
+    subject_key: /path/to/keys/rsu_004.key
+    profile: rsu_with_cpm
+
+  # Example with inline permissions (overrides profile)
+  - station_id: "005"
+    name: "special_vehicle"
+    subject_key: /path/to/keys/vehicle_005.key
+    cam_permissions: "1111111111110000"
+    denm_permissions: "111111111111110000000000"
+    permit_vam: false
+    permit_cpm: true
+    permit_gn_mgmt: false
+
+  # Another station using the full permissions profile
+  - station_id: "006"
+    name: "test_vehicle"
+    subject_key: /path/to/keys/vehicle_006.key
+    profile: full_permissions
+
