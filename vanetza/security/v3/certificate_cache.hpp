@@ -51,7 +51,11 @@ public:
 
 private:
     using CertificateMap = std::unordered_map<HashedId8, Certificate>;
-    using ShortDigestMap = std::unordered_map<HashedId3, CertificateMap::iterator>;
+    // Maps to the full digest rather than a CertificateMap::iterator: unordered_map
+    // guarantees element references/pointers survive insertion, but NOT iterators,
+    // which a rehash of m_storage can invalidate. Re-resolving via lookup(HashedId8&)
+    // keeps this safe regardless of how many entries accumulate in m_storage.
+    using ShortDigestMap = std::unordered_map<HashedId3, HashedId8>;
 
     // TODO add bounded capacity and automatic removal of expired certificates
     CertificateMap m_storage;
