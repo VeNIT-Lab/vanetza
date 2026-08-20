@@ -22,7 +22,7 @@ const Certificate* CertificateCache::lookup(const HashedId3& digest) const
 {
     auto found = m_short_digests.find(digest);
     if (found != m_short_digests.end()) {
-        return &found->second->second;
+        return lookup(found->second);
     } else {
         return nullptr;
     }
@@ -32,11 +32,10 @@ void CertificateCache::store(Certificate cert)
 {
     auto maybe_hash = cert.calculate_digest();
     if (maybe_hash) {
-        CertificateMap::iterator it;
-        bool inserted;
-        std::tie(it, inserted) = m_storage.emplace(*maybe_hash, std::move(cert));
+        bool inserted = false;
+        std::tie(std::ignore, inserted) = m_storage.emplace(*maybe_hash, std::move(cert));
         if (inserted) {
-            m_short_digests.emplace(truncate(*maybe_hash), it);
+            m_short_digests.emplace(truncate(*maybe_hash), *maybe_hash);
             m_digests.insert(*maybe_hash);
         }
     }
