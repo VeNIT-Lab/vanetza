@@ -28,6 +28,7 @@
 #include <vanetza/geonet/secured_pdu.hpp>
 #include <boost/units/cmath.hpp>
 #include <functional>
+#include <iostream>
 #include <stdexcept>
 #include <tuple>
 #include <type_traits>
@@ -379,10 +380,67 @@ DataConfirm Router::request(const GucDataRequest&, DownPacketPtr)
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
-DataConfirm Router::request(const TsbDataRequest&, DownPacketPtr)
+DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload)
 {
     std::lock_guard<std::recursive_mutex> lock(m_mutex);
-    return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
+    DataConfirm result;
+    result ^= validate_data_request(request, m_mib);
+    result ^= validate_payload(payload, m_mib);
+
+    if (result.accepted()) {
+        using PendingPacket = PendingPacket<TsbPdu>;
+
+        // step 4: set up packet repetition (NOTE 4 on page 57 requires re-execution of source operations)
+        if (request.repetition) {
+            // plaintext payload needs to get passed
+            m_repeater.add(request, *payload);
+        }
+
+        // step 1: create PDU
+        auto pdu = create_tsb_pdu(request);
+        pdu->common().payload = payload->size();
+
+        ControlInfo ctrl(request);
+        auto transmit = [this, ctrl](PendingPacket::Packet&& packet) {
+            std::unique_ptr<TsbPdu> pdu;
+            std::unique_ptr<DownPacket> payload;
+            std::tie(pdu, payload) = std::move(packet);
+
+            // update SO PV before actual transmission
+            pdu->extended().source_position = m_local_position_vector;
+
+            // step 2: encapsulate packet by security
+            if (m_mib.itsGnSecurity) {
+                payload = encap_packet(ctrl.its_aid, ctrl.permissions, *pdu, std::move(payload));
+                if (!payload) {
+                    // stop because encapsulation failed
+                    return;
+                }
+            }
+
+            // step 5: execute media-dependent procedures
+            execute_media_procedures(ctrl.communication_profile);
+
+            // step 6: pass packet down to link layer with broadcast destination
+            pass_down(cBroadcastMacAddress, std::move(pdu), std::move(payload));
+
+            // step 7: reset beacon timer
+            reset_beacon_timer();
+        };
+
+        PendingPacket packet(std::make_tuple(std::move(pdu), std::move(payload)), transmit);
+
+        // step 3: store & carry forwarding
+        if (request.traffic_class.store_carry_forward() && !m_location_table.has_neighbours()) {
+            PacketBuffer::data_ptr data { new PendingPacketBufferData<TsbPdu>(std::move(packet)) };
+            m_bc_forward_buffer.push(std::move(data), m_runtime.now());
+        } else {
+            // transmit immediately
+            packet.process();
+        }
+    }
+
+    return result;
 }
 
 void Router::indicate(UpPacketPtr packet, const MacAddress& sender, const MacAddress& destination)
@@ -1334,6 +1392,17 @@ std::unique_ptr<ShbPdu> Router::create_shb_pdu(const ShbDataRequest& request)
     return pdu;
 }
 
+std::unique_ptr<TsbPdu> Router::create_tsb_pdu(const TsbDataRequest& request)
+{
+    std::unique_ptr<TsbPdu> pdu { new TsbPdu(request, m_mib) };
+    pdu->basic().hop_limit = static_cast<uint8_t>(request.max_hop_limit);
+    pdu->common().header_type = HeaderType::TSB_Multi_Hop;
+    pdu->common().maximum_hop_limit = static_cast<uint8_t>(request.max_hop_limit);
+    pdu->extended().sequence_number = m_local_sequence_number++;
+    pdu->extended().source_position = m_local_position_vector;
+    return pdu;
+}
+
 std::unique_ptr<BeaconPdu> Router::create_beacon_pdu()
 {
     std::unique_ptr<BeaconPdu> pdu { new BeaconPdu(m_mib) };
@@ -1372,7 +1441,7 @@ Router::DownPacketPtr Router::encap_packet(ItsAid its_aid, ByteBuffer ssp, Pdu& 
 
         struct Visitor : boost::static_visitor<DownPacketPtr>
         {
-            Visitor(DownPacketPtr packet, Pdu& pdu) : m_packet(std::move(packet)), m_pdu(pdu)
+            Visitor(DownPacketPtr packet, Pdu& pdu, ItsAid its_aid) : m_packet(std::move(packet)), m_pdu(pdu), m_its_aid(its_aid)
             {
                 assert(size(*m_packet, OsiLayer::Transport, max_osi_layer()) == 0);
                 assert(m_pdu.basic().next_header == NextHeaderBasic::Secured);
@@ -1387,14 +1456,17 @@ Router::DownPacketPtr Router::encap_packet(ItsAid its_aid, ByteBuffer ssp, Pdu& 
             DownPacketPtr operator() (const security::SignConfirmError&)
             {
                 // SN-SIGN encapsulation failed
+                std::cerr << "[Router::encap_packet] SN-SIGN encapsulation failed for its_aid=" << m_its_aid
+                          << " -- packet dropped silently" << std::endl;
                 return nullptr;
             }
 
             DownPacketPtr m_packet;
             Pdu& m_pdu;
+            ItsAid m_its_aid;
         };
 
-        Visitor visitor(std::move(packet), pdu);
+        Visitor visitor(std::move(packet), pdu, its_aid);
         return boost::apply_visitor(visitor, confirm);
     } else {
         // security entity is not available
