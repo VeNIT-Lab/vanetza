@@ -546,6 +546,14 @@ private:
      */
     std::unique_ptr<GbcPdu> create_gbc_pdu(const GbcDataRequest&);
 
+    /**
+     * \brief Create an initialized Topologically-Scoped-Broadcast (multi-hop) PDU
+     *
+     * \param request
+     * \return PDU object
+     */
+    std::unique_ptr<TsbPdu> create_tsb_pdu(const TsbDataRequest&);
+
     const MIB& m_mib;
     Runtime& m_runtime;
     dcc::RequestInterface* m_request_interface;

@@ -37,6 +37,9 @@ CommonHeader::CommonHeader(const DataRequest& request, const MIB& mib) :
     CommonHeader(mib)
 {
     switch (request.upper_protocol) {
+        case UpperProtocol::Unknown:
+            next_header = NextHeaderCommon::Any;
+            break;
         case UpperProtocol::BTP_A:
             next_header = NextHeaderCommon::BTP_A;
             break;
