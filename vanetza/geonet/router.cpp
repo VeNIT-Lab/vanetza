@@ -142,7 +142,18 @@ Router::Router(Runtime& rt, const MIB& mib) :
     m_bc_forward_buffer(mib.itsGnBcForwardingPacketBufferSize * 1024),
     m_uc_forward_buffer(mib.itsGnUcForwardingPacketBufferSize * 1024),
     m_cbf_buffer(m_runtime,
-            [](PendingPacketGbc&& packet) { packet.process(); },
+            [this](PendingPacketGbc&& packet) {
+                // Contention window elapsed without being discarded/superseded -- this
+                // is CBF/Advanced's own decision to finally relay the packet, so remember
+                // it the same way the explicit discard sites do (see m_cbf_finalized_memory).
+                const GeoBroadcastHeader& gbc = packet.pdu().extended();
+                // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+                std::cerr << "[cbf_buffer timer-fire] t=" << m_runtime.now().time_since_epoch().count()
+                          << " RELAYING seq=" << static_cast<SequenceNumber::value_type>(gbc.sequence_number)
+                          << std::endl;
+                m_cbf_finalized_memory.remember(identifier(gbc.source_position.gn_addr, gbc.sequence_number));
+                packet.process();
+            },
             create_cbf_counter(rt, mib),
             mib.itsGnCbfPacketBufferSize * 1024),
     m_local_sequence_number(0),
@@ -163,6 +174,9 @@ Router::Router(Runtime& rt, const MIB& mib) :
     }
 
     m_gbc_memory.capacity(m_mib.vanetzaGbcMemoryCapacity);
+    // Matches itsGnDPLLength's default (8): this only needs to cover a handful of
+    // resends of the same packet within a session, not act as a long-term cache.
+    m_cbf_finalized_memory.capacity(8);
 }
 
 Router::~Router()
@@ -883,6 +897,7 @@ NextHop Router::non_area_contention_based_forwarding(PendingPacketForwarding&& p
         nh.transmit(std::move(packet), cBroadcastMacAddress);
     } else if (m_cbf_buffer.remove(cbf_id)) {
         // packet has been in CBF buffer (and is now dropped)
+        m_cbf_finalized_memory.remember(cbf_id);
         nh.discard();
     } else {
         const HeaderType ht = packet.pdu().common().header_type;
@@ -922,6 +937,7 @@ NextHop Router::area_contention_based_forwarding(PendingPacketForwarding&& packe
     if (!sender) {
         nh.transmit(std::move(packet), cBroadcastMacAddress);
     } else if (m_cbf_buffer.remove(cbf_id) || m_cbf_buffer.counter(cbf_id) >= m_mib.vanetzaCbfMaxCounter) {
+        m_cbf_finalized_memory.remember(cbf_id);
         nh.discard();
     } else {
         const units::Duration timeout = timeout_cbf(*sender);
@@ -975,21 +991,36 @@ NextHop Router::area_advanced_forwarding(PendingPacketForwarding&& packet, const
 
         if (cbf_packet) {
             // packet is already buffered
-            if (m_cbf_buffer.counter(cbf_id) >= max_counter) {
+            const std::size_t cur_counter = m_cbf_buffer.counter(cbf_id);
+            // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+            std::cerr << "[area_advanced_forwarding] t=" << m_runtime.now().time_since_epoch().count()
+                      << " ALREADY_BUFFERED sender(buffered)=" << cbf_packet->sender()
+                      << " ll.sender(new)=" << ll->sender << " counter=" << cur_counter
+                      << " max_counter=" << max_counter << std::endl;
+            if (cur_counter >= max_counter) {
                 // stop contending if counter is exceeded
+                std::cerr << "[area_advanced_forwarding] => DISCARD (counter exceeded)" << std::endl;
                 m_cbf_buffer.remove(cbf_id);
+                m_cbf_finalized_memory.remember(cbf_id);
                 nh.discard();
             } else if (!outside_sectorial_contention_area(cbf_packet->sender(), ll->sender)) {
                 // within sectorial area
                 // - sender S = sender of buffered packet
                 // - forwarder F = sender of now received packet
+                std::cerr << "[area_advanced_forwarding] => DISCARD (within sectorial area)" << std::endl;
                 m_cbf_buffer.remove(cbf_id);
+                m_cbf_finalized_memory.remember(cbf_id);
                 nh.discard();
             } else {
+                std::cerr << "[area_advanced_forwarding] => UPDATE+BUFFER (outside sectorial area)" << std::endl;
                 m_cbf_buffer.update(cbf_id, clock_cast(timeout_cbf(ll->sender)));
                 nh.buffer();
             }
         } else {
+            // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+            std::cerr << "[area_advanced_forwarding] t=" << m_runtime.now().time_since_epoch().count()
+                      << " FRESH ll.sender=" << ll->sender << " ll.destination=" << ll->destination
+                      << " local=" << m_local_position_vector.gn_addr.mid() << std::endl;
             if (ll->destination == m_local_position_vector.gn_addr.mid()) {
                 // continue with greedy forwarding
                 nh = greedy_forwarding(packet.duplicate());
@@ -1025,6 +1056,21 @@ bool Router::outside_sectorial_contention_area(const MacAddress& sender, const M
     auto position_sender = m_location_table.get_position(sender);
     auto position_forwarder = m_location_table.get_position(forwarder);
 
+    // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+    std::cerr << "[outside_sectorial_contention_area] sender=" << sender << " forwarder=" << forwarder
+              << " position_sender=" << (position_sender != nullptr)
+              << " position_forwarder=" << (position_forwarder != nullptr);
+    if (position_sender) {
+        std::cerr << " sender_lat=" << position_sender->position().latitude.value()
+                  << " sender_lon=" << position_sender->position().longitude.value();
+    }
+    if (position_forwarder) {
+        std::cerr << " forwarder_lat=" << position_forwarder->position().latitude.value()
+                  << " forwarder_lon=" << position_forwarder->position().longitude.value();
+    }
+    std::cerr << " local_lat=" << m_local_position_vector.position().latitude.value()
+              << " local_lon=" << m_local_position_vector.position().longitude.value() << std::endl;
+
     // Assumption: if any position is missing, then sectorial area becomes infinite small
     // As a result of this assumption, everything lays outside then
     if (position_sender && position_forwarder) {
@@ -1041,8 +1087,16 @@ bool Router::outside_sectorial_contention_area(const MacAddress& sender, const M
         }
         const auto angle_th = m_mib.itsGnBroadcastCBFDefSectorAngle;
 
-        return !(dist_r < dist_f && dist_f < dist_max && angle_fsr < angle_th);
+        const bool result = !(dist_r < dist_f && dist_f < dist_max && angle_fsr < angle_th);
+        // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+        std::cerr << "[outside_sectorial_contention_area] dist_r=" << dist_r.value() << " dist_f=" << dist_f.value()
+                  << " dist_rf=" << dist_rf.value() << " dist_max=" << dist_max.value()
+                  << " angle_fsr_rad=" << angle_fsr.value() << " angle_th_rad=" << angle_th.value()
+                  << " => outside=" << result << std::endl;
+        return result;
     } else {
+        // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+        std::cerr << "[outside_sectorial_contention_area] => outside=1 (missing position)" << std::endl;
         return true;
     }
 }
@@ -1212,6 +1266,29 @@ bool Router::process_extended(const ExtendedPduConstRefs<GeoBroadcastHeader>& pd
 
     // step 3: determine position relative to destination area
     const bool within_destination = inside_or_at_border(dest_area, m_local_position_vector.position());
+
+    // CBF/Advanced already finally disposed of this exact packet in an earlier round
+    // (m_cbf_finalized_memory is only ever populated from m_cbf_buffer's timer-fire
+    // callback and its explicit discard sites -- see area_advanced_forwarding(),
+    // area_contention_based_forwarding() and non_area_contention_based_forwarding()).
+    // A later arrival of the same (source, sequence_number) at this point isn't a fresh
+    // packet contending for the first time, just a neighbour still repeating one this
+    // station already relayed or discarded -- re-entering m_cbf_buffer as if new would
+    // let it be relayed again with no bound. This check is independent of step 3a/3b
+    // below: it only ever matches packets that actually went through the CBF/Advanced
+    // path, so it can't affect Unspecified/Greedy/SIMPLE forwarding.
+    if (m_cbf_finalized_memory.knows(identifier(source_addr, gbc.sequence_number))) {
+        // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+        std::cerr << "[process_extended GBC] t=" << m_runtime.now().time_since_epoch().count()
+                  << " seq=" << static_cast<SequenceNumber::value_type>(gbc.sequence_number)
+                  << " DROPPED (already finalized)" << std::endl;
+        return false;
+    }
+    // TEMPORARY diagnostic for the BV_23/BV_24 investigation -- remove once resolved.
+    std::cerr << "[process_extended GBC] t=" << m_runtime.now().time_since_epoch().count()
+              << " seq=" << static_cast<SequenceNumber::value_type>(gbc.sequence_number)
+              << " ll.sender=" << ll.sender << " -- not finalized, proceeding" << std::endl;
+
     // step 3a
     bool duplicate_packet = false;
     if (!within_destination) {
