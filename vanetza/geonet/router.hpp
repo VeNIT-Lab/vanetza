@@ -569,6 +569,16 @@ private:
     Repeater m_repeater;
     std::mt19937 m_random_gen;
     GbcMemory m_gbc_memory;
+    // Remembers (source, sequence_number) pairs that CBF/Advanced area or non-area
+    // forwarding has already finally disposed of -- relayed once its contention timer
+    // fired, or discarded outright -- so a later arrival of that same packet (after
+    // m_cbf_buffer's own entry for it is long gone) is recognized as stale rather than
+    // re-entering the buffer as if new. See process_extended(GeoBroadcastHeader) and the
+    // m_cbf_buffer timer callback / discard sites in area_advanced_forwarding(),
+    // area_contention_based_forwarding() and non_area_contention_based_forwarding().
+    // Always enabled (unlike m_gbc_memory, which is off by default): this closes a
+    // correctness gap in the CBF/Advanced algorithms themselves, not an optional filter.
+    GbcMemory m_cbf_finalized_memory;
     mutable std::recursive_mutex m_mutex;
 };
 
