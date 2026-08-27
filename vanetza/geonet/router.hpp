@@ -104,7 +104,8 @@ public:
         Hop_Limit,
         Source_PDR,
         Sender_PDR,
-        Outside_Destination_Area
+        Outside_Destination_Area,
+        Max_Geo_Area_Size
     };
 
     Router(Runtime&, const MIB&);
