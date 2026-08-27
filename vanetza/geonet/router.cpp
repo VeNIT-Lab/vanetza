@@ -1330,6 +1330,17 @@ bool Router::process_extended(const ExtendedPduConstRefs<GeoBroadcastHeader>& pd
     // step 8b: flush UC forwarding packet buffer
     flush_unicast_forwarding_buffer(source_addr);
 
+    // Annex B.3: "If the geographical area size carried in a GBC or GAC packet exceeds
+    // the maximum value specified in... itsGnMaxGeoAreaSize, the GeoNetworking packet
+    // shall not be sent by the source and shall not be forwarded by the forwarder."
+    // The source-side half is enforced in data_confirm.cpp; this is the forwarder-side
+    // half, which was previously missing entirely -- a packet with an oversized
+    // destination area would be relayed by any forwarding algorithm with no bound.
+    if (area_size(dest_area) > m_mib.itsGnMaxGeoAreaSize) {
+        forwarding_stopped(ForwardingStopReason::Max_Geo_Area_Size);
+        return decide_pass_up(within_destination, gbc);
+    }
+
     // step 9: discard packet (no forwarding) if hop limit is reached
     if (pdu.basic().hop_limit <= 1) {
         forwarding_stopped(ForwardingStopReason::Hop_Limit);
