@@ -21,8 +21,15 @@ add_executable(socktap
     tcp_link.cpp
     time_trigger.cpp
     udp_link.cpp
+    certificate_validation_v3.cpp
 )
 target_link_libraries(socktap PUBLIC Boost::program_options Threads::Threads vanetza)
+
+if(VANETZA_WITH_PQC)
+    target_sources(socktap PRIVATE certificate_validation_v3_pqc.cpp)
+else()
+    target_sources(socktap PRIVATE certificate_validation_v3_strict.cpp)
+endif()
 
 if (TARGET rpc)
     set(SOCKTAP_WITH_RPC_DEFAULT ON)

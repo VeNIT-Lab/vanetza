@@ -1,4 +1,5 @@
 #include "security.hpp"
+#include "certificate_validation_v3.hpp"
 #include <vanetza/geodesy/country_database.hpp>
 #include <vanetza/security/delegating_security_entity.hpp>
 #include <vanetza/security/persistence.hpp>
@@ -82,17 +83,17 @@ public:
 class SecurityContextV3 : public security::SecurityEntity
 {
 public:
-    SecurityContextV3(const Runtime& runtime, PositionProvider& positioning,
-                      const std::string& backend_name, bool permissive_identified_region = false) :
+    SecurityContextV3(const po::variables_map& options, const Runtime& runtime,
+                      PositionProvider& positioning, const std::string& backend_name,
+                      bool permissive_identified_region = false) :
         runtime(runtime), positioning(positioning),
         backend(security::create_backend(backend_name)),
         country_database(geodesy::CountryDatabase::embedded())
     {
-        cert_validator.use_runtime(&runtime);
-        cert_validator.use_position_provider(&positioning);
         location_checker.set_permissive_identified_region(permissive_identified_region);
         location_checker.use_country_database(&country_database);
-        cert_validator.use_location_checker(&location_checker);
+        certificate_validation = create_certificate_validation_v3(
+            options, runtime, positioning, location_checker, *backend);
     }
 
     security::EncapConfirm encapsulate_packet(security::EncapRequest&& request) override
@@ -116,6 +117,7 @@ public:
         if (!cert_provider) {
             throw std::runtime_error("certificate provider is missing");
         }
+        auto& cert_validator = certificate_validation->validator();
         sign_header_policy.reset(new security::v3::DefaultSignHeaderPolicy(runtime, positioning, *cert_provider));
         std::unique_ptr<security::SignService> sign_service { new 
             security::v3::StraightSignService(*cert_provider, *backend, *sign_header_policy, cert_validator) };
@@ -130,12 +132,12 @@ public:
     const Runtime& runtime;
     PositionProvider& positioning;
     std::unique_ptr<security::Backend> backend;
-    std::unique_ptr<security::SecurityEntity> entity;
+    geodesy::CountryDatabase country_database;
+    security::v3::DefaultLocationChecker location_checker;
     std::unique_ptr<security::v3::CertificateProvider> cert_provider;
     std::unique_ptr<security::v3::DefaultSignHeaderPolicy> sign_header_policy;
-    security::v3::DefaultCertificateValidator cert_validator;
-    security::v3::DefaultLocationChecker location_checker;
-    geodesy::CountryDatabase country_database;
+    std::unique_ptr<CertificateValidationV3> certificate_validation;
+    std::unique_ptr<security::SecurityEntity> entity;
 };
 
 std::unique_ptr<security::SecurityEntity>
@@ -173,15 +175,17 @@ load_v2_certificates(const std::string& cert_path, const std::string& cert_key_p
 }
 
 std::unique_ptr<security::v3::CertificateProvider>
-load_v3_certificates(const std::string& cert_path, const std::string& cert_key_path, const std::vector<std::string> cert_chain_path)
+load_v3_certificates(const std::string& cert_path, const std::string& cert_key_path,
+    const std::vector<std::string> cert_chain_path, CertificateValidationV3& validation)
 {
     auto authorization_ticket = security::v3::load_certificate_from_file(cert_path);
-    auto authorization_ticket_key = security::load_private_key_from_pem_file(cert_key_path);
+    auto authorization_ticket_key = validation.load_authorization_ticket_key(cert_key_path);
 
     auto provider = std::make_unique<security::v3::StaticCertificateProvider>(authorization_ticket, authorization_ticket_key);
     for (auto& chain_path : cert_chain_path) {
         auto chain_certificate = security::v3::load_certificate_from_file(chain_path);
         provider->cache().store(chain_certificate);
+        validation.add_chain_certificate(chain_certificate);
     }
     return provider;
 }
@@ -217,8 +221,9 @@ create_security_entity(const po::variables_map& vm, const Runtime& runtime, Posi
             if (version == 3) {
                 bool permissive_ir = vm.count("security.permissive-identified-region") &&
                                      vm["security.permissive-identified-region"].as<bool>();
-                auto context = std::make_unique<SecurityContextV3>(runtime, positioning, backend_name, permissive_ir);
-                context->cert_provider = load_v3_certificates(cert_path, cert_key_path, chain_paths);
+                auto context = std::make_unique<SecurityContextV3>(vm, runtime, positioning, backend_name, permissive_ir);
+                context->cert_provider = load_v3_certificates(
+                    cert_path, cert_key_path, chain_paths, *context->certificate_validation);
                 context->build_entity();
                 security = std::move(context);
             } else {
@@ -237,8 +242,11 @@ create_security_entity(const po::variables_map& vm, const Runtime& runtime, Posi
             if (version == 3) {
                 bool permissive_ir = vm.count("security.permissive-identified-region") &&
                                      vm["security.permissive-identified-region"].as<bool>();
-                auto context = std::make_unique<SecurityContextV3>(runtime, positioning, backend_name, permissive_ir);
-                context->cert_provider = std::make_unique<security::v3::NaiveCertificateProvider>(runtime);
+                auto context = std::make_unique<SecurityContextV3>(vm, runtime, positioning, backend_name, permissive_ir);
+                auto provider = std::make_unique<security::v3::NaiveCertificateProvider>(runtime);
+                context->certificate_validation->add_chain_certificate(provider->aa_certificate());
+                context->certificate_validation->add_chain_certificate(provider->root_certificate());
+                context->cert_provider = std::move(provider);
                 context->build_entity();
                 security = std::move(context);
             } else {
@@ -271,4 +279,5 @@ void add_security_options(po::options_description& options)
         ("security.permissive-identified-region", po::bool_switch()->default_value(false),
          "Accept IdentifiedRegion certificate constraints without verification (opt-in fallback; see issue #262). Default: reject (OutsideRegion).")
     ;
+    add_certificate_validation_v3_options(options);
 }

@@ -110,6 +110,55 @@ You can choose from three simple example V2X applications to run with *socktap* 
 - *benchmark* counts the number of any received messages and prints the current message rate once per second
 
 
+## Hybrid-PQC Certificate Validation
+
+An experimental build configured with `VANETZA_WITH_PQC=ON` adds the
+`--enable-pqc-verification` option. With `--security certs-v3`, this verifies
+the outer ECC signatures in the configured Root-to-AT certificate chain and
+also verifies FN-DSA-512 alternative signatures whenever they are present.
+External certificate, key, and chain files are required; the option does not
+support socktap's built-in naive V3 credentials.
+
+Provide the authorization ticket and its PKCS#8 DER ECC private key with
+`--certificate` and `--certificate-key`. This is the format written by
+`certify generate-key`. Provide its issuer certificates with
+`--certificate-chain`, normally the AA followed by the trusted Root CA:
+
+```shell
+bin/socktap \
+  --link-layer udp \
+  --interface lo \
+  --mac-address 02:00:00:00:00:11 \
+  --applications ca \
+  --positioning static \
+  --latitude 48.7668616 \
+  --longitude 11.432068 \
+  --security certs-v3 \
+  --crypto-backend OpenSSL \
+  --enable-pqc-verification \
+  --certificate ticket.cert \
+  --certificate-key ticket.key \
+  --certificate-chain aa.cert root.cert
+```
+
+This DER behavior is limited to `--enable-pqc-verification`; normal V3
+operation retains upstream socktap's PEM key format.
+
+The option permits purely ECC chains for interoperability between nodes built
+with the experimental profile, but rejects invalid or inconsistent PQC
+material. It affects certificate-chain validation only; the secured CAM or
+other application message is still signed with ECC. An unmodified strict build
+cannot receive hybrid certificates because its ASN.1 model does not preserve
+the experimental fields needed for certificate canonicalization. An ECC-only
+chain produced by `certify-pqc` also retains the experimental profile's OER
+layout and therefore requires a PQC-profile build.
+
+ECC and hybrid certificates generated as separate chains normally have
+different Root CAs. A PQC-capable receiver must be given the AA and Root of
+every chain it is expected to trust; loading only its own chain does not make an
+independently generated peer chain trusted.
+
+
 ## Building and Running
 
 You need to enable the CMake option `BUILD_SOCKTAP` so *socktap* will be built at all.
