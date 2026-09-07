@@ -44,6 +44,7 @@ DecapConfirm DecapConfirm::from(VerifyConfirm&& verify, const SecuredMessageView
     decap.plaintext_payload = get_payload_copy(msg_view);
     decap.report = verify.report;
     decap.certificate_validity = verify.certificate_validity;
+    decap.certificate_id = verify.certificate_id;
     decap.its_aid = verify.its_aid;
     decap.permissions = verify.permissions;
     return decap;
