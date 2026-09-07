@@ -1,5 +1,6 @@
 #include <vanetza/asn1/security_profile.hpp>
 #include VANETZA_ASN1_SECURITY_HEADER(Certificate.h)
+#include <vanetza/security/hash_algorithm.hpp>
 #include <vanetza/security/sha.hpp>
 #include <vanetza/security/v3/asn1_conversions.hpp>
 #include <vanetza/security/v3/certificate.hpp>
@@ -19,6 +20,7 @@ namespace v3
 
 namespace
 {
+HashAlgorithm digest_hash_algorithm(const asn1::EtsiTs103097Certificate& cert);
 bool copy_curve_point(PublicKey& to, const asn1::EccP256CurvePoint& from);
 bool copy_curve_point(PublicKey& to, const asn1::EccP384CurvePoint& from);
 ByteBuffer fetch_octets(const OCTET_STRING_t& octets);
@@ -409,20 +411,19 @@ boost::optional<Certificate> canonicalize(const asn1::EtsiTs103097Certificate& c
     }
 }
 
-boost::optional<HashedId8> calculate_digest_internal(const asn1::EtsiTs103097Certificate& cert, KeyType key_type)
+boost::optional<HashedId8> calculate_digest_internal(const asn1::EtsiTs103097Certificate& cert, HashAlgorithm hash_algo)
 {
     boost::optional<HashedId8> digest;
 
     try {
         ByteBuffer buffer = asn1::encode_oer(asn_DEF_Vanetza_Security_EtsiTs103097Certificate, &cert);
 
-        switch (key_type)
+        switch (hash_algo)
         {
-            case KeyType::NistP256:
-            case KeyType::BrainpoolP256r1:
+            case HashAlgorithm::SHA256:
                 digest = create_hashed_id8(calculate_sha256_digest(buffer.data(), buffer.size()));
                 break;
-            case KeyType::BrainpoolP384r1:
+            case HashAlgorithm::SHA384:
                 digest = create_hashed_id8(calculate_sha384_digest(buffer.data(), buffer.size()));
                 break;
             default:
@@ -438,14 +439,14 @@ boost::optional<HashedId8> calculate_digest_internal(const asn1::EtsiTs103097Cer
 boost::optional<HashedId8> calculate_digest(const asn1::EtsiTs103097Certificate& cert)
 {
     boost::optional<HashedId8> digest;
-    auto key_type = get_verification_key_type(cert);
-    if (key_type != KeyType::Unspecified) {
+    const HashAlgorithm hash_algo = digest_hash_algorithm(cert);
+    if (hash_algo != HashAlgorithm::Unspecified) {
         if (is_canonical(cert)) {
-            digest = calculate_digest_internal(cert, key_type);
+            digest = calculate_digest_internal(cert, hash_algo);
         } else {
             auto maybe_canonical_cert = canonicalize(cert);
             if (maybe_canonical_cert) {
-                digest = calculate_digest_internal(*maybe_canonical_cert.value(), key_type);
+                digest = calculate_digest_internal(*maybe_canonical_cert.value(), hash_algo);
             }
         }
     }
@@ -859,6 +860,30 @@ bool copy_curve_point(PublicKey& to, const asn1::EccP384CurvePoint& from)
     }
 
     return copied;
+}
+
+HashAlgorithm digest_hash_algorithm(const asn1::EtsiTs103097Certificate& cert)
+{
+    // IEEE 1609.2 clause 6.4.3: hash algorithm depends on the verification key indicator;
+    // a reconstruction value (implicit certificate) is always an EccP256CurvePoint and
+    // clause 5.3.2 mandates SHA-256 for implicit certificates
+    const asn1::VerificationKeyIndicator& indicator = cert.toBeSigned.verifyKeyIndicator;
+    switch (indicator.present) {
+        case Vanetza_Security_VerificationKeyIndicator_PR_verificationKey:
+            switch (indicator.choice.verificationKey.present) {
+                case Vanetza_Security_PublicVerificationKey_PR_ecdsaNistP256:
+                case Vanetza_Security_PublicVerificationKey_PR_ecdsaBrainpoolP256r1:
+                    return HashAlgorithm::SHA256;
+                case Vanetza_Security_PublicVerificationKey_PR_ecdsaBrainpoolP384r1:
+                    return HashAlgorithm::SHA384;
+                default:
+                    return HashAlgorithm::Unspecified;
+            }
+        case Vanetza_Security_VerificationKeyIndicator_PR_reconstructionValue:
+            return HashAlgorithm::SHA256;
+        default:
+            return HashAlgorithm::Unspecified;
+    }
 }
 
 ByteBuffer fetch_octets(const OCTET_STRING_t& octets)
