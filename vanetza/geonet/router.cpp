@@ -175,6 +175,23 @@ Router::Router(Runtime& rt, const MIB& mib) :
     m_cbf_finalized_memory.capacity(8);
 }
 
+namespace
+{
+
+// Greater than zero while this thread processes a data request whose stack holds no iteration over router state;
+// only then the router lock may be given up while a message is signed.
+thread_local unsigned t_signing_without_lock = 0;
+
+struct ScopedSigningWithoutLock
+{
+    ScopedSigningWithoutLock() { ++t_signing_without_lock; }
+    ~ScopedSigningWithoutLock() { --t_signing_without_lock; }
+    ScopedSigningWithoutLock(const ScopedSigningWithoutLock&) = delete;
+    ScopedSigningWithoutLock& operator=(const ScopedSigningWithoutLock&) = delete;
+};
+
+} // namespace
+
 Router::~Router()
 {
     m_runtime.cancel(this);
@@ -182,7 +199,7 @@ Router::~Router()
 
 void Router::update_position(const PositionFix& position_fix)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     // EN 302 636-4-1 v1.3.1 is a little bit fuzzy regarding the time stamp:
     // "Expresses the time (...) at which the latitude and longitude (...) were acquired by the GeoAdhoc router."
     // My reading: use the current time stamp (now) when update_position is called (not the position fix time stamp)
@@ -201,47 +218,53 @@ void Router::update_position(const PositionFix& position_fix)
         position_fix.confidence.semi_major * 2.0 < m_mib.itsGnPaiInterval;
 }
 
+void Router::run_locked(const std::function<void()>& fn) const
+{
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
+    fn();
+}
+
 void Router::set_transport_handler(UpperProtocol proto, TransportInterface* ifc)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_transport_ifcs[proto] = ifc;
 }
 
 void Router::set_security_entity(security::SecurityEntity* entity)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_security_entity = entity;
 }
 
 void Router::set_access_interface(dcc::RequestInterface* ifc)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_request_interface = (ifc == nullptr ? get_default_request_interface() : ifc);
     assert(m_request_interface != nullptr);
 }
 
 void Router::set_dcc_field_generator(DccFieldGenerator* dcc)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_dcc_field_generator = (dcc == nullptr) ? get_default_dcc_field_generator() : dcc;
     assert(m_dcc_field_generator != nullptr);
 }
 
 void Router::set_address(const Address& addr)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_local_position_vector.gn_addr = addr;
 }
 
 void Router::set_random_seed(std::uint_fast32_t seed)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     m_random_gen.seed(seed);
 }
 
 DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
     result ^= validate_payload(payload, m_mib);
@@ -295,6 +318,7 @@ DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload
             m_bc_forward_buffer.push(std::move(data), m_runtime.now());
         } else {
             // tranmsit immediately
+            ScopedSigningWithoutLock unlocked;
             packet.process();
         }
     }
@@ -304,7 +328,7 @@ DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload
 
 DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
     result ^= validate_payload(payload, m_mib);
@@ -372,6 +396,7 @@ DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload
         PacketBuffer::data_ptr data { new PendingPacketBufferData<GbcPdu>(std::move(packet)) };
         m_bc_forward_buffer.push(std::move(data), m_runtime.now());
     } else {
+        ScopedSigningWithoutLock unlocked;
         packet.process();
     }
 
@@ -380,19 +405,19 @@ DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload
 
 DataConfirm Router::request(const GacDataRequest&, DownPacketPtr)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
 DataConfirm Router::request(const GucDataRequest&, DownPacketPtr)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     return DataConfirm(DataConfirm::ResultCode::Rejected_Unspecified);
 }
 
 DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
     result ^= validate_payload(payload, m_mib);
@@ -446,6 +471,7 @@ DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload
             m_bc_forward_buffer.push(std::move(data), m_runtime.now());
         } else {
             // transmit immediately
+            ScopedSigningWithoutLock unlocked;
             packet.process();
         }
     }
@@ -455,7 +481,7 @@ DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload
 
 void Router::indicate(UpPacketPtr packet, const MacAddress& sender, const MacAddress& destination)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     assert(packet);
     IndicationContext::LinkLayer link_layer;
     link_layer.sender = sender;
@@ -572,7 +598,14 @@ void Router::indicate_secured(IndicationContextBasic& ctx, const BasicHeader& ba
     } else if (m_security_entity) {
         // Decap packet
         using namespace vanetza::security;
-        DecapConfirm decap_confirm = m_security_entity->decapsulate_packet(SecuredMessageView { *secured_message });
+        security::SecurityEntity* const entity = m_security_entity;
+        DecapConfirm decap_confirm = [&] {
+            // Verifying takes milliseconds and uses nothing of the router: everything that is needed afterwards is
+            // owned by this stack frame (ctx, secured_message). Transmitting threads can use the router meanwhile.
+            ReleasableMutex::ScopedRelease release(m_mutex);
+            std::lock_guard<std::mutex> security_lock(m_security_mutex);
+            return entity->decapsulate_packet(SecuredMessageView { *secured_message });
+        }();
         ctx.service_primitive().security_report = decap_confirm.report;
         ctx.service_primitive().its_aid = decap_confirm.its_aid;
         ctx.service_primitive().permissions = decap_confirm.permissions;
@@ -785,7 +818,7 @@ void Router::pass_up(const DataIndication& ind, UpPacketPtr packet)
 
 void Router::on_beacon_timer_expired()
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     if (m_mib.vanetzaDisableBeaconing) {
         // bail out immediately if beaconing has been disabled
         return;
@@ -838,7 +871,7 @@ void Router::reset_beacon_timer(Clock::duration next_beacon)
 
 void Router::dispatch_repetition(const DataRequestVariant& request, std::unique_ptr<DownPacket> payload)
 {
-    std::lock_guard<std::recursive_mutex> lock(m_mutex);
+    std::lock_guard<ReleasableMutex> lock(m_mutex);
     RepetitionDispatcher dispatcher(*this, std::move(payload));
     boost::apply_visitor(dispatcher, request);
 }
@@ -1480,6 +1513,13 @@ std::unique_ptr<GbcPdu> Router::create_gbc_pdu(const GbcDataRequest& request)
     return pdu;
 }
 
+security::EncapConfirm Router::sign(security::SecurityEntity& entity, security::SignRequest&& request)
+{
+    ReleasableMutex::ScopedRelease release(m_mutex, t_signing_without_lock > 0);
+    std::lock_guard<std::mutex> security_lock(m_security_mutex);
+    return entity.encapsulate_packet(std::move(request));
+}
+
 Router::DownPacketPtr Router::encap_packet(ItsAid its_aid, ByteBuffer ssp, Pdu& pdu, DownPacketPtr packet)
 {
     if (m_security_entity) {
@@ -1492,7 +1532,7 @@ Router::DownPacketPtr Router::encap_packet(ItsAid its_aid, ByteBuffer ssp, Pdu& 
         sign_request.its_aid = its_aid;
         sign_request.permissions = std::move(ssp);
 
-        security::EncapConfirm confirm = m_security_entity->encapsulate_packet(std::move(sign_request));
+        security::EncapConfirm confirm = sign(*m_security_entity, std::move(sign_request));
 
         struct Visitor : boost::static_visitor<DownPacketPtr>
         {

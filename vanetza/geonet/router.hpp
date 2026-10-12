@@ -31,7 +31,10 @@
 #include <memory>
 #include <random>
 #include <map>
+#include <atomic>
+#include <functional>
 #include <mutex>
+#include <thread>
 
 namespace vanetza
 {
@@ -71,6 +74,67 @@ struct LinkLayer;
  *
  * This implementation follows EN 302 636-4-1 v1.3.1
  */
+/**
+ * Recursive mutex that its owner can hand back completely (all recursion levels) for a while.
+ *
+ * The Router serializes everything on one lock. Signing and verifying a message (ECDSA) take milliseconds on an
+ * embedded CPU, and every other thread that sends or receives has to wait for them. The owner releases the lock
+ * around those calls with ScopedRelease and takes it back, at the same recursion depth, afterwards.
+ */
+class ReleasableMutex
+{
+public:
+    void lock()
+    {
+        m_mutex.lock();
+        if (++m_depth == 1) {
+            m_owner.store(std::this_thread::get_id(), std::memory_order_relaxed);
+        }
+    }
+
+    void unlock()
+    {
+        if (--m_depth == 0) {
+            m_owner.store(std::thread::id(), std::memory_order_relaxed);
+        }
+        m_mutex.unlock();
+    }
+
+    /// Releases the lock entirely while alive; does nothing when the calling thread does not own it.
+    class ScopedRelease
+    {
+    public:
+        explicit ScopedRelease(ReleasableMutex& mutex, bool enabled = true) : m_mutex(mutex)
+        {
+            if (enabled && mutex.m_owner.load(std::memory_order_relaxed) == std::this_thread::get_id()) {
+                m_levels = mutex.m_depth;
+                for (unsigned i = 0; i < m_levels; ++i) {
+                    mutex.unlock();
+                }
+            }
+        }
+
+        ~ScopedRelease()
+        {
+            for (unsigned i = 0; i < m_levels; ++i) {
+                m_mutex.lock();
+            }
+        }
+
+        ScopedRelease(const ScopedRelease&) = delete;
+        ScopedRelease& operator=(const ScopedRelease&) = delete;
+
+    private:
+        ReleasableMutex& m_mutex;
+        unsigned m_levels = 0;
+    };
+
+private:
+    std::recursive_mutex m_mutex;
+    unsigned m_depth = 0; // only touched by the owner
+    std::atomic<std::thread::id> m_owner { std::thread::id() };
+};
+
 class Router
 {
 public:
@@ -170,6 +234,14 @@ public:
      * \param fix current position fix
      */
     void update_position(const PositionFix&);
+
+    /**
+     * Run a function with the router lock held
+     *
+     * The router is used by several threads and guards its state with one lock. Callbacks that a runtime invokes on
+     * behalf of the router (timers of its buffers, the repeater, the beacon) have to run under that lock too.
+     */
+    void run_locked(const std::function<void()>& fn) const;
 
     /**
      * \brief Register a transport protocol handler.
@@ -525,6 +597,15 @@ private:
     DownPacketPtr encap_packet(ItsAid aid, ByteBuffer ssp, Pdu& pdu, DownPacketPtr packet);
 
     /**
+     * \brief Sign a message without holding the router lock when that is safe
+     *
+     * The router lock is released only while a request is processed that nothing else on this thread's stack is
+     * iterating over (see ScopedSigningWithoutLock). The security entity is not thread-safe itself, so all its
+     * calls are serialized by m_security_mutex.
+     */
+    security::EncapConfirm sign(security::SecurityEntity& entity, security::SignRequest&& request);
+
+    /**
      * \brief Create an initialized Single-Hop-Broadcast PDU
      *
      * \param request
@@ -580,7 +661,8 @@ private:
     // Always enabled (unlike m_gbc_memory, which is off by default): this closes a
     // correctness gap in the CBF/Advanced algorithms themselves, not an optional filter.
     GbcMemory m_cbf_finalized_memory;
-    mutable std::recursive_mutex m_mutex;
+    mutable ReleasableMutex m_mutex;
+    std::mutex m_security_mutex;
 };
 
 /**
