@@ -5,6 +5,7 @@
 #include <vanetza/security/v3/hash.hpp>
 #include <vanetza/security/v3/sign_service.hpp>
 #include <vanetza/security/v3/secured_message.hpp>
+#include <venit_metrics_handler/metrics.hpp>
 
 namespace vanetza
 {
@@ -12,6 +13,26 @@ namespace security
 {
 namespace v3
 {
+
+namespace
+{
+
+/// name of the signature algorithm reported to the metrics handler
+[[maybe_unused]] const char* algorithm_name(KeyType type)
+{
+    switch (type) {
+        case KeyType::NistP256:
+            return "ECDSA-NistP256";
+        case KeyType::BrainpoolP256r1:
+            return "ECDSA-BrainpoolP256r1";
+        case KeyType::BrainpoolP384r1:
+            return "ECDSA-BrainpoolP384r1";
+        default:
+            return "unspecified";
+    }
+}
+
+} // namespace
 
 StraightSignService::StraightSignService(CertificateProvider& provider, Backend& backend, SignHeaderPolicy& policy, CertificateValidator& validator) :
     m_certificates(provider), m_backend(backend), m_policy(policy), m_validator(validator)
@@ -33,7 +54,11 @@ SignConfirm StraightSignService::sign(SignRequest&& request)
     }
 
     ByteBuffer digest = calculate_message_hash(m_backend, hash_algo, secured_message.signing_payload(), signing_cert);
-    Signature signature = m_backend.sign_digest(m_certificates.own_private_key(), digest);
+    VENIT_METRIC_ALGORITHM(algorithm_name(signing_cert.get_verification_key_type()));
+    Signature signature = [&] {
+        VENIT_METRIC_SCOPE(SIGNATURE_TIME);
+        return m_backend.sign_digest(m_certificates.own_private_key(), digest);
+    }();
     secured_message.set_signature(signature);
     return SignConfirm::success(std::move(secured_message));
 }

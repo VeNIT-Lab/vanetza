@@ -2,6 +2,7 @@
 #include "data_indication.hpp"
 #include <vanetza/common/archives.hpp>
 #include <vanetza/geonet/data_indication.hpp>
+#include <venit_metrics_handler/metrics.hpp>
 #include <algorithm>
 #include <cassert>
 
@@ -97,6 +98,7 @@ void PortDispatcher::indicate(
         const geonet::DataIndication& gn_ind,
         std::unique_ptr<UpPacket> packet)
 {
+    VENIT_METRIC_SCOPE(RECEIVED_MESSAGE_BTP_LATENCY);
     assert(packet);
     boost::optional<DataIndication> btp_ind = parse_btp_header(gn_ind, *packet);
     IndicationInterface* handler = nullptr;

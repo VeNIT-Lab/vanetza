@@ -27,6 +27,7 @@
 #include <vanetza/geonet/extended_pdu.hpp>
 #include <vanetza/geonet/secured_pdu.hpp>
 #include <boost/units/cmath.hpp>
+#include <venit_metrics_handler/metrics.hpp>
 #include <functional>
 #include <iostream>
 #include <stdexcept>
@@ -264,6 +265,7 @@ void Router::set_random_seed(std::uint_fast32_t seed)
 
 DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload)
 {
+    VENIT_METRIC_SCOPE(SENT_MESSAGE_GN_LATENCY);
     std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
@@ -328,6 +330,7 @@ DataConfirm Router::request(const ShbDataRequest& request, DownPacketPtr payload
 
 DataConfirm Router::request(const GbcDataRequest& request, DownPacketPtr payload)
 {
+    VENIT_METRIC_SCOPE(SENT_MESSAGE_GN_LATENCY);
     std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
@@ -417,6 +420,7 @@ DataConfirm Router::request(const GucDataRequest&, DownPacketPtr)
 
 DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload)
 {
+    VENIT_METRIC_SCOPE(SENT_MESSAGE_GN_LATENCY);
     std::lock_guard<ReleasableMutex> lock(m_mutex);
     DataConfirm result;
     result ^= validate_data_request(request, m_mib);
@@ -481,6 +485,7 @@ DataConfirm Router::request(const TsbDataRequest& request, DownPacketPtr payload
 
 void Router::indicate(UpPacketPtr packet, const MacAddress& sender, const MacAddress& destination)
 {
+    VENIT_METRIC_SCOPE(RECEIVED_MESSAGE_GN_LATENCY);
     std::lock_guard<ReleasableMutex> lock(m_mutex);
     assert(packet);
     IndicationContext::LinkLayer link_layer;
@@ -600,6 +605,7 @@ void Router::indicate_secured(IndicationContextBasic& ctx, const BasicHeader& ba
         using namespace vanetza::security;
         security::SecurityEntity* const entity = m_security_entity;
         DecapConfirm decap_confirm = [&] {
+            VENIT_METRIC_SCOPE(RECEIVED_MESSAGE_SECURITY_LATENCY);
             // Verifying takes milliseconds and uses nothing of the router: everything that is needed afterwards is
             // owned by this stack frame (ctx, secured_message). Transmitting threads can use the router meanwhile.
             ReleasableMutex::ScopedRelease release(m_mutex);
@@ -613,6 +619,7 @@ void Router::indicate_secured(IndicationContextBasic& ctx, const BasicHeader& ba
 
         // check whether the received packet is valid
         if (is_successful(decap_confirm.report)) {
+            VENIT_METRIC_VERIFIED();
             boost::apply_visitor(visitor, decap_confirm.plaintext_payload);
         } else if (SecurityDecapHandling::Non_Strict == m_mib.itsGnSnDecapResultHandling) {
             // Any packet is passed up with NON-STRICT decapsulation handling
@@ -1523,6 +1530,7 @@ security::EncapConfirm Router::sign(security::SecurityEntity& entity, security::
 Router::DownPacketPtr Router::encap_packet(ItsAid its_aid, ByteBuffer ssp, Pdu& pdu, DownPacketPtr packet)
 {
     if (m_security_entity) {
+        VENIT_METRIC_SCOPE(SENT_MESSAGE_SECURITY_LATENCY);
         DownPacket sec_payload;
         sec_payload[OsiLayer::Network] = SecuredPdu(pdu);
         sec_payload.merge(*packet, OsiLayer::Transport, max_osi_layer());
