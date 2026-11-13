@@ -18,6 +18,7 @@
 #include <vanetza/security/v3/hash.hpp>
 #include <vanetza/security/v3/sign_header_policy.hpp>
 #include <boost/optional.hpp>
+#include <venit_metrics_handler/metrics.hpp>
 
 // asn1c quirk
 struct Vanetza_Security_Certificate : public Vanetza_Security_CertificateBase {};
@@ -311,7 +312,11 @@ VerifyConfirm StraightVerifyService::verify(const v2::SecuredMessage& secured_me
             return confirm;
         }
 
-        if (m_backend.verify_data(public_key.get(), payload, *ecdsa)) {
+        const bool verified = [&] {
+            VENIT_METRIC_SCOPE(VERIFICATION_TIME);
+            return m_backend.verify_data(public_key.get(), payload, *ecdsa);
+        }();
+        if (verified) {
             signer = cert;
             break;
         }
@@ -535,7 +540,11 @@ VerifyConfirm StraightVerifyService::verify(const v3::SecuredMessage& msg)
     try {
         ByteBuffer msg_hash = v3::calculate_message_hash(m_backend, msg.hash_id(),
             msg.signing_payload(), v3::CertificateView { certificate });
-        if (!m_backend.verify_digest(*public_key, msg_hash, *signature)) {
+        const bool verified = [&] {
+            VENIT_METRIC_SCOPE(VERIFICATION_TIME);
+            return m_backend.verify_digest(*public_key, msg_hash, *signature);
+        }();
+        if (!verified) {
             confirm.report = VerificationReport::False_Signature;
             return confirm;
         }
