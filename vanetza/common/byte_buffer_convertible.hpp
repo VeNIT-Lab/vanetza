@@ -10,6 +10,9 @@
 
 namespace vanetza
 {
+
+class ByteBufferConvertible;
+
 namespace convertible
 {
 
@@ -24,8 +27,14 @@ struct byte_buffer
 template<class T>
 struct byte_buffer_impl;
 
+template<class T, class U = std::decay_t<T>>
+struct has_impl : boost::is_complete<byte_buffer_impl<U>> {};
+
+// ByteBufferConvertible must never be wrapped into itself: checking for
+// byte_buffer_impl<ByteBufferConvertible> would instantiate a (possibly defined)
+// primary template, e.g. the asn1c one, and fail hard during copy overload resolution
 template<class T>
-struct has_impl : boost::is_complete<byte_buffer_impl<std::decay_t<T>>> {};
+struct has_impl<T, ByteBufferConvertible> : std::false_type {};
 
 template<>
 struct byte_buffer_impl<ByteBuffer> : public byte_buffer
