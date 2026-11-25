@@ -87,7 +87,11 @@ public:
     explicit ByteBufferConvertible(std::unique_ptr<convertible::byte_buffer> ptr) :
         m_wrapper(std::move(ptr)) {}
 
-    template<class T, typename = std::enable_if_t<convertible::has_impl<T>::value>>
+    // Copy/move construction must never probe has_impl<ByteBufferConvertible>: older compilers (GCC 9)
+    // would instantiate the asn1c byte_buffer_impl primary template with an unrelated type (hard error).
+    template<class T, typename = std::enable_if_t<std::conjunction<
+        std::negation<std::is_same<std::decay_t<T>, ByteBufferConvertible>>,
+        convertible::has_impl<T>>::value>>
     ByteBufferConvertible(T&& t) :
         m_wrapper(new convertible::byte_buffer_impl<std::decay_t<T>>(std::forward<T>(t))) {}
 
