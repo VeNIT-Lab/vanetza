@@ -13,6 +13,9 @@
 #include <gtest/gtest.h>
 #include <array>
 #include <stdexcept>
+#ifdef VENIT_WITH_HYBRID_METRICS
+#include <venit_metrics_handler/metrics.hpp>
+#endif
 
 using namespace vanetza;
 using namespace vanetza::security;
@@ -199,6 +202,32 @@ v3::CertificateValidator::Verdict validate(
     validator.disable_location_checks(true);
     return validator.valid_for_signing(chain.at, aid::CA);
 }
+
+#ifdef VENIT_WITH_HYBRID_METRICS
+/// like validate() above, the hybrid-PQC metrics of the validator belong to messages of the given direction
+v3::CertificateValidator::Verdict validate(
+    Chain& chain, pqc::HybridCertificateValidator::VerificationPolicy policy,
+    venit::metrics::Direction direction)
+{
+    TrustStore trust_store;
+    trust_store.insert(chain.root);
+
+    IssuerMemoryLookup issuer_lookup;
+    if (!issuer_lookup.insert(chain.root) || !issuer_lookup.insert(chain.aa)) {
+        throw std::runtime_error("cannot populate issuer lookup");
+    }
+
+    pqc::HybridCertificateValidator validator;
+    validator.use_issuer_lookup(&issuer_lookup);
+    validator.use_trust_store(&trust_store);
+    validator.use_backends(chain.ecc_backend.get(), chain.pqc_backend.get());
+    validator.use_verification_policy(policy);
+    validator.use_metrics_direction(direction);
+    validator.disable_time_checks(true);
+    validator.disable_location_checks(true);
+    return validator.valid_for_signing(chain.at, aid::CA);
+}
+#endif
 
 } // namespace
 
@@ -439,3 +468,20 @@ TEST(HybridCertificate, unsupported_alternative_choice_is_not_treated_as_absent)
     EXPECT_EQ(CertificateValidator::Verdict::Untrusted,
         validate(chain, pqc::HybridCertificateValidator::VerificationPolicy::HybridIfPresent));
 }
+
+#ifdef VENIT_WITH_HYBRID_METRICS
+TEST(HybridCertificate, validator_verdict_does_not_depend_on_metrics_direction)
+{
+    using Policy = pqc::HybridCertificateValidator::VerificationPolicy;
+    // sent: own certificate validated before signing, received: the sender's one
+    for (const auto direction : { venit::metrics::Direction::Sent, venit::metrics::Direction::Received }) {
+        Chain chain;
+        EXPECT_EQ(CertificateValidator::Verdict::Valid,
+            validate(chain, Policy::HybridRequired, direction));
+
+        Chain classical_chain(false);
+        EXPECT_EQ(CertificateValidator::Verdict::Untrusted,
+            validate(classical_chain, Policy::HybridRequired, direction));
+    }
+}
+#endif

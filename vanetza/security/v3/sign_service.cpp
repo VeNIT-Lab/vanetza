@@ -6,6 +6,12 @@
 #include <vanetza/security/v3/sign_service.hpp>
 #include <vanetza/security/v3/secured_message.hpp>
 #include <venit_metrics_handler/metrics.hpp>
+#ifdef VENIT_WITH_HYBRID_METRICS
+#include <string>
+
+// alternative (PQC) signature algorithm of the hybrid-PQC certificates, the messages are signed with ECDSA
+#define VENIT_ALTERNATIVE_ALGORITHM_NAME "FN-DSA-512"
+#endif
 
 namespace vanetza
 {
@@ -49,12 +55,22 @@ SignConfirm StraightSignService::sign(SignRequest&& request)
     secured_message.set_payload(convert_to_payload(request.plain_message));
     m_policy.prepare_header(request, secured_message);
 
-    if (m_validator.valid_for_signing(signing_cert, request.its_aid) != CertificateValidator::Verdict::Valid) {
+    auto verdict = [&] {
+        VENIT_METRIC_SCOPE(SENT_MESSAGE_CERTIFICATE_VALIDATION_TIME);
+        return m_validator.valid_for_signing(signing_cert, request.its_aid);
+    }();
+    if (verdict != CertificateValidator::Verdict::Valid) {
         return SignConfirm::failure(SignConfirmError::No_Certificate);
     }
 
     ByteBuffer digest = calculate_message_hash(m_backend, hash_algo, secured_message.signing_payload(), signing_cert);
+#ifdef VENIT_WITH_HYBRID_METRICS
+    // hybrid-PQC stack: the algorithm of the messages along with the alternative one of the certificates
+    VENIT_METRIC_ALGORITHM((std::string(algorithm_name(signing_cert.get_verification_key_type())) + "+" +
+        VENIT_ALTERNATIVE_ALGORITHM_NAME).c_str());
+#else
     VENIT_METRIC_ALGORITHM(algorithm_name(signing_cert.get_verification_key_type()));
+#endif
     Signature signature = [&] {
         VENIT_METRIC_SCOPE(SIGNATURE_TIME);
         return m_backend.sign_digest(m_certificates.own_private_key(), digest);

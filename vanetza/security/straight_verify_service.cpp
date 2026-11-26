@@ -500,7 +500,10 @@ VerifyConfirm StraightVerifyService::verify(const v3::SecuredMessage& msg)
 
     // check AT certificate's validity
     if (m_context_v3.m_cert_validator) {
-        auto verdict = m_context_v3.m_cert_validator->valid_for_signing(v3::CertificateView { certificate }, msg.its_aid());
+        auto verdict = [&] {
+            VENIT_METRIC_SCOPE(RECEIVED_MESSAGE_CERTIFICATE_VALIDATION_TIME);
+            return m_context_v3.m_cert_validator->valid_for_signing(v3::CertificateView { certificate }, msg.its_aid());
+        }();
         if (verdict != v3::CertificateValidator::Verdict::Valid) {
             confirm.report = VerificationReport::Invalid_Certificate;
             return confirm;
