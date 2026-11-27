@@ -13,9 +13,7 @@
 #include <gtest/gtest.h>
 #include <array>
 #include <stdexcept>
-#ifdef VENIT_WITH_HYBRID_METRICS
 #include <venit_metrics_handler/metrics.hpp>
-#endif
 
 using namespace vanetza;
 using namespace vanetza::security;
@@ -203,7 +201,6 @@ v3::CertificateValidator::Verdict validate(
     return validator.valid_for_signing(chain.at, aid::CA);
 }
 
-#ifdef VENIT_WITH_HYBRID_METRICS
 /// like validate() above, the hybrid-PQC metrics of the validator belong to messages of the given direction
 v3::CertificateValidator::Verdict validate(
     Chain& chain, pqc::HybridCertificateValidator::VerificationPolicy policy,
@@ -227,7 +224,6 @@ v3::CertificateValidator::Verdict validate(
     validator.disable_location_checks(true);
     return validator.valid_for_signing(chain.at, aid::CA);
 }
-#endif
 
 } // namespace
 
@@ -469,7 +465,6 @@ TEST(HybridCertificate, unsupported_alternative_choice_is_not_treated_as_absent)
         validate(chain, pqc::HybridCertificateValidator::VerificationPolicy::HybridIfPresent));
 }
 
-#ifdef VENIT_WITH_HYBRID_METRICS
 TEST(HybridCertificate, validator_verdict_does_not_depend_on_metrics_direction)
 {
     using Policy = pqc::HybridCertificateValidator::VerificationPolicy;
@@ -484,4 +479,3 @@ TEST(HybridCertificate, validator_verdict_does_not_depend_on_metrics_direction)
             validate(classical_chain, Policy::HybridRequired, direction));
     }
 }
-#endif

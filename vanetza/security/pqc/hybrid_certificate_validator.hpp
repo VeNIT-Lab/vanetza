@@ -2,7 +2,6 @@
 
 #include <vanetza/security/v3/certificate_validator.hpp>
 #include <vanetza/security/pqc/fndsa512.hpp>
-#ifdef VENIT_WITH_HYBRID_METRICS
 #include <cstdint>
 
 namespace venit
@@ -13,7 +12,6 @@ namespace metrics
 enum class Direction : std::uint8_t;
 } // namespace metrics
 } // namespace venit
-#endif
 
 namespace vanetza
 {
@@ -66,13 +64,11 @@ public:
     void use_backends(::vanetza::security::Backend*, Backend*);
     void use_verification_policy(VerificationPolicy);
 
-#ifdef VENIT_WITH_HYBRID_METRICS
     /**
      * Direction of the messages whose certificates this validator validates (sent: own certificate before signing,
      * received: the sender's certificate), reported along with its hybrid-PQC metrics. Default: received.
      */
     void use_metrics_direction(venit::metrics::Direction);
-#endif
 
     void disable_time_checks(bool);
     void disable_location_checks(bool);
@@ -81,11 +77,9 @@ public:
 
 private:
     bool chain_is_authentic(const v3::CertificateView&) const;
-#ifdef VENIT_WITH_HYBRID_METRICS
     // verify_primary_certificate() measured as hybrid-PQC metric
     bool primary_signature_is_valid(
         const v3::CertificateView& subject, const v3::CertificateView* issuer) const;
-#endif
     bool alternative_signature_is_accepted(
         const v3::CertificateView& subject, const v3::CertificateView* issuer) const;
 
@@ -95,9 +89,7 @@ private:
     ::vanetza::security::Backend* m_ecc_backend = nullptr;
     Backend* m_pqc_backend = nullptr;
     VerificationPolicy m_verification_policy = VerificationPolicy::HybridRequired;
-#ifdef VENIT_WITH_HYBRID_METRICS
     venit::metrics::Direction m_metrics_direction {}; // received
-#endif
 };
 
 } // namespace pqc

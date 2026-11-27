@@ -6,7 +6,7 @@
 #include <vanetza/security/v3/sign_service.hpp>
 #include <vanetza/security/v3/secured_message.hpp>
 #include <venit_metrics_handler/metrics.hpp>
-#ifdef VENIT_WITH_HYBRID_METRICS
+#ifdef VANETZA_WITH_PQC
 #include <string>
 
 // alternative (PQC) signature algorithm of the hybrid-PQC certificates, the messages are signed with ECDSA
@@ -64,7 +64,7 @@ SignConfirm StraightSignService::sign(SignRequest&& request)
     }
 
     ByteBuffer digest = calculate_message_hash(m_backend, hash_algo, secured_message.signing_payload(), signing_cert);
-#ifdef VENIT_WITH_HYBRID_METRICS
+#ifdef VANETZA_WITH_PQC
     // hybrid-PQC stack: the algorithm of the messages along with the alternative one of the certificates
     VENIT_METRIC_ALGORITHM((std::string(algorithm_name(signing_cert.get_verification_key_type())) + "+" +
         VENIT_ALTERNATIVE_ALGORITHM_NAME).c_str());

@@ -71,12 +71,10 @@ void HybridCertificateValidator::use_verification_policy(VerificationPolicy poli
     m_verification_policy = policy;
 }
 
-#ifdef VENIT_WITH_HYBRID_METRICS
 void HybridCertificateValidator::use_metrics_direction(venit::metrics::Direction direction)
 {
     m_metrics_direction = direction;
 }
-#endif
 
 void HybridCertificateValidator::disable_time_checks(bool disable)
 {
@@ -118,14 +116,12 @@ bool HybridCertificateValidator::alternative_signature_is_accepted(
         subject, issuer, *m_ecc_backend, *m_pqc_backend);
 }
 
-#ifdef VENIT_WITH_HYBRID_METRICS
 bool HybridCertificateValidator::primary_signature_is_valid(
     const v3::CertificateView& subject, const v3::CertificateView* issuer) const
 {
     VENIT_HYBRID_METRIC_SCOPE(m_metrics_direction, ECC_CERTIFICATE_VERIFICATION_TIME);
     return verify_primary_certificate(subject, issuer, *m_ecc_backend);
 }
-#endif
 
 bool HybridCertificateValidator::chain_is_authentic(
     const v3::CertificateView& signing_certificate) const
@@ -140,11 +136,7 @@ bool HybridCertificateValidator::chain_is_authentic(
             if (!root_digest || m_trust_store->lookup(*root_digest).empty()) {
                 return false;
             }
-#ifdef VENIT_WITH_HYBRID_METRICS
             return primary_signature_is_valid(*subject, nullptr) &&
-#else
-            return verify_primary_certificate(*subject, nullptr, *m_ecc_backend) &&
-#endif
                 alternative_signature_is_accepted(*subject, nullptr);
         }
 
@@ -161,11 +153,7 @@ bool HybridCertificateValidator::chain_is_authentic(
             return false;
         }
 
-#ifdef VENIT_WITH_HYBRID_METRICS
         if (!primary_signature_is_valid(*subject, issuer) ||
-#else
-        if (!verify_primary_certificate(*subject, issuer, *m_ecc_backend) ||
-#endif
                 !alternative_signature_is_accepted(*subject, issuer)) {
             return false;
         }
